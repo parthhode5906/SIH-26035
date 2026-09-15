@@ -42,17 +42,17 @@
 
 **Goal:** FastAPI service with PostgreSQL persistence, auth, and the canonical evaluate-observation endpoint.
 
-- [ ] P2-1 · SQLAlchemy models + Alembic migrations for all five tables (architecture.md §4)
-- [ ] P2-2 · Auth: JWT login, refresh, bcrypt hashing; `users` seeding script; RBAC dependency
-- [ ] P2-3 · Instruments CRUD + class-rule validation on create
-- [ ] P2-4 · Sessions lifecycle (draft → in_progress → completed → approved) + env fields
-- [ ] P2-5 · `POST /sessions/{id}/observations` — engine evaluation at insert; **append-only** enforcement
-- [ ] P2-6 · Batch sync endpoint for offline payloads (`POST /sessions/{id}/observations:batch`)
-- [ ] P2-7 · Attachments upload (type/size restricted)
-- [ ] P2-8 · Drift watchdog service (env delta evaluation at observation commit)
-- [ ] P2-9 · API tests: happy path + validation failures + RBAC denials
+- [x] P2-1 · SQLAlchemy models + Alembic migrations for all five tables (architecture.md §4) *(models + create_all done; Alembic chain deferred to P7 hardening — tracked in parking lot)*
+- [x] P2-2 · Auth: JWT login, refresh, bcrypt hashing; `users` seeding script; RBAC dependency *(bcrypt used directly — passlib unmaintained)*
+- [x] P2-3 · Instruments CRUD + class-rule validation on create *(422 with auditor-readable Table 3 reason)*
+- [x] P2-4 · Sessions lifecycle (draft → in_progress → completed → approved) + env fields
+- [x] P2-5 · `POST /sessions/{id}/observations` — engine evaluation at insert; **append-only** enforcement *(revision-0 uniqueness enforced in service: DB unique indexes treat NULL positions as distinct)*
+- [x] P2-6 · Batch sync endpoint for offline payloads (`POST /sessions/{id}/observations:batch`) *(SAVEPOINT per row: bad rows never discard good ones)*
+- [x] P2-7 · Attachments upload (type/size restricted) *(stored outside web root, UUID names; metadata persistence lands with reports in P5)*
+- [x] P2-8 · Drift watchdog service (env delta evaluation at observation commit) *(§3.9.2.3 verified: 1e/°C class I, 1e/5°C others — D-14 resolved)*
+- [x] P2-9 · API tests: happy path + validation failures + RBAC denials *(22 tests)*
 
-**Definition of done:** all endpoints contracted in architecture.md §6 exist and are tested; no route contains math (code review).
+**Definition of done:** MET 2026-09-15 — all 16 §6 endpoints exist; 49/49 backend tests green; no route contains math (all evaluation flows through services → engine); live HTTP smoke test verified login→instrument→session→flagship FAIL.
 
 ---
 
@@ -60,13 +60,15 @@
 
 **Goal:** PWA skeleton with auth, dashboard, wizard, and the offline store — ready to host test modules.
 
-- [ ] P3-1 · Vite + React + Tailwind scaffold; design tokens from design.md §6
-- [ ] P3-2 · Login + auth store; role-aware routing
-- [ ] P3-3 · Dashboard (S2) with session cards + stats
-- [ ] P3-4 · New Evaluation wizard (S3/S4) incl. instrument form with class validation
-- [ ] P3-5 · IndexedDB store + sync engine + connectivity pill (offline-first core)
-- [ ] P3-6 · TS mirror engine wired to `golden_vectors.json` (provisional verdicts offline)
-- [ ] P3-7 · Session workspace shell (S5): tabs, progress bar, autosave behavior
+- [x] P3-1 · Vite + React + Tailwind scaffold; design tokens from design.md §6 *(Tailwind v4 @theme tokens; tabular-nums utility)*
+- [x] P3-2 · Login + auth store; role-aware routing *(zustand + persist; refresh-on-401)*
+- [x] P3-3 · Dashboard (S2) with session cards + stats
+- [x] P3-4 · New Evaluation wizard (S3/S4) incl. instrument form with class validation *(offline fallback queues the session in the outbox)*
+- [x] P3-5 · IndexedDB store + sync engine + connectivity pill (offline-first core) *(Dexie; outbox; server-wins sync; health-check connectivity)*
+- [x] P3-6 · TS mirror engine wired to `golden_vectors.json` (provisional verdicts offline) *(16/16 conformance tests — decimal.js, same vector file as Python)*
+- [x] P3-7 · Session workspace shell (S5): tabs, progress bar, autosave behavior *(tabs + Live Validation Row + latest-wins table; per-test progress bars land with P4 modules)*
+
+**Definition of done:** MET 2026-09-15 — vitest 16/16; `npm run build` clean; full offline session created and reloaded from IndexedDB without loss; sync pushes via `/observations:batch` (server re-evaluates, server wins).
 
 **Definition of done:** a full offline session can be created and reloaded without data loss; sync pushes to Phase 2 backend correctly.
 
@@ -76,15 +78,17 @@
 
 **Goal:** all R-76 physical tests instrumented with dedicated UI + engine wiring.
 
-- [ ] P4-1 · Live Validation Row component (design.md §5.2) — shared across tests
-- [ ] P4-2 · Weighing performance module (increasing/decreasing load table)
-- [ ] P4-3 · Eccentricity module with interactive quadrant diagram (design.md §5.1)
-- [ ] P4-4 · Repeatability module (10×/20× consecutive loads)
-- [ ] P4-5 · Tare module
-- [ ] P4-6 · Creep module with timer panel + mandatory capture points (design.md §5.3)
-- [ ] P4-7 · Environmental module + watchdog banner states (design.md §5.4)
-- [ ] P4-8 · Zero-tracking/zero check module
-- [ ] P4-9 · Module completion gating → Finalize button logic
+- [x] P4-1 · Live Validation Row component (design.md §5.2) — shared across tests *(now with rulebook-suggested-load prefill)*
+- [x] P4-2 · Weighing performance module (increasing/decreasing load table) *(suggested loads: Min, 500e, 2000e, ½Max, Max — §A.4.4.1)*
+- [x] P4-3 · Eccentricity module with interactive quadrant diagram (design.md §5.1) *(SVG grid, clickable segments 1–4, verdict fills, load = ⅓ Max per §3.6.2.1; verified live)*
+- [x] P4-4 · Repeatability module (10×/20× consecutive loads) *(min 10 rows, suggested ½Max/Max — §A.4.10)*
+- [x] P4-5 · Tare module *(≥5 net steps incl. Min + changeovers — §A.4.6.1)*
+- [x] P4-6 · Creep module with timer panel + mandatory capture points (design.md §5.3) *(pure state machine `lib/creep.ts`: 0/5/15/30 min points, 30-s due window, 0.5e/0.2e early-termination rule — §A.4.11.1)*
+- [x] P4-7 · Environmental module + watchdog banner states (design.md §5.4) *(green/amber from GET /drift; red state pending Phase 5 thresholds)*
+- [x] P4-8 · Zero-tracking/zero check module *(10e break-out load — §A.4.2.3.2)*
+- [x] P4-9 · Module completion gating → Finalize button logic *(progress bar, ✓/● tab states, Finalize tooltip lists incomplete modules)*
+
+**Verification record (2026-09-15):** all constants extracted verbatim from `required rulebook/r076-1-e06.pdf` (pages 87–92, 30); 17 new vitest cases in `frontend/tests/phase4.test.ts` (33/33 total); eccentricity grid + creep timer + verdict flow verified live in the preview (position 1 FAIL → auto-advance to position 2, grid fill red).
 
 **Definition of done:** a Class III demo instrument can be taken through every module with live PASS/FAIL and correct gating; all verdicts are server-computed when online.
 

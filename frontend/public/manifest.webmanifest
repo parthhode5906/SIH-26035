@@ -1,0 +1,17 @@
+{
+  "name": "OIML R-76 Compliance Suite",
+  "short_name": "R76 Suite",
+  "description": "Offline-first test reporting for Non-Automatic Weighing Instruments (OIML R-76).",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#2563EB",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

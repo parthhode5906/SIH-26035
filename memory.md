@@ -40,14 +40,14 @@ Then follow the startup ritual in [rules.md §3](rules.md).
 |---|---|---|---|
 | 0 | Planning & governance docs | ✅ Complete | These five docs; README reconciliation still pending (task P0-4 in phases.md) |
 | 1 | Core metrology engine + tests | ✅ Complete | 27/27 pytest green; P1-2 verification done 2026-09-15 (all four classes vs official PDF) |
-| 2 | Backend API + database | ⬜ Not started | |
-| 3 | Frontend shell (auth, dashboard, PWA base) | ⬜ Not started | |
-| 4 | Test modules (weighing, eccentricity, repeatability, tare, creep) | ⬜ Not started | |
-| 5 | Report generation (PDF/DOCX + QR seal) | ⬜ Not started | |
+| 2 | Backend API + database | ✅ Complete | 16 §6 endpoints; 49/49 backend tests; D-14 drift limit verified; live HTTP smoke test passed |
+| 3 | Frontend shell (auth, dashboard, PWA base) | ✅ Complete | Vite+React+Tailwind v4; TS mirror 16/16 on shared vectors; offline outbox + sync; build clean |
+| 4 | Test modules (weighing, eccentricity, repeatability, tare, creep) | ✅ Complete | Rulebook-sourced requirements (`lib/requirements.ts`), eccentricity SVG grid, creep timer, watchdog banner, finalize gating; 33/33 vitest; verified live |
+| 5 | Report generation (PDF/DOCX + QR seal) | ⬜ Not started | Sign-off endpoint exists; rendering pending |
 | 6 | Differentiators (serial, OCR, watchdog UI, public verify) | ⬜ Not started | |
-| 7 | Hardening, docs, SIH deliverables | ⬜ Not started | |
+| 7 | Hardening, docs, SIH deliverables | ⬜ Not started | Alembic migrations deferred here |
 
-**Working on right now:** Phase 2 — backend API + DB (SQLAlchemy models, JWT/RBAC, session & observation endpoints). Phase 1 closed 2026-09-15.
+**Working on right now:** Phase 5 — report generation (R 76-2 style PDF/DOCX, QR seal) on the finalize/sign-off flow.
 
 **Known blockers:** none.
 
@@ -58,19 +58,21 @@ Then follow the startup ritual in [rules.md §3](rules.md).
 ### 4.1 Local development (planned; verify commands as code lands)
 
 ```bash
-# Backend
+# Backend (FastAPI on :8000)
 cd backend
 python -m venv .venv && source .venv/bin/activate   # Windows: .\.venv\Scripts\activate
 pip install -r requirements.txt
-# uvicorn entrypoint lands in Phase 2 (src/api/main.py)
+./.venv/Scripts/python -m scripts.seed               # demo users + Class III instrument
+./.venv/Scripts/python -m uvicorn src.api.main:app --port 8000 --reload
 
-# Frontend
+# Frontend (Vite on :5173; VITE_API_BASE defaults to http://localhost:8000)
 cd frontend
 npm install
-npm run dev                                       # Vite dev server
+npm run dev
 
 # Tests (pytest.ini sets pythonpath=. so src.engine imports resolve)
-cd backend && ./.venv/Scripts/python -m pytest      # 27 tests (golden vectors + all-class band edges)
+cd backend && ./.venv/Scripts/python -m pytest      # 49 tests (engine vectors + band edges + API)
+cd frontend && npx vitest run                       # 16 mirror conformance tests
 ```
 
 ### 4.2 Tooling & versions (agreed targets)
@@ -121,6 +123,12 @@ cd backend && ./.venv/Scripts/python -m pytest      # 27 tests (golden vectors +
 | 2026-09-15 | D-18 | Precision policy: internal arithmetic exact (28-digit Decimal context); reported values quantized to 6 decimal places, ROUND_HALF_UP, strictly downstream of verdicts | Presentation rounding can never flip a Pass/Fail |
 | 2026-09-15 | D-19 | Engine implements INITIAL-VERIFICATION MPEs (Table 6). In-service MPEs (2×, §3.5.2) are out of scope for v1; if ever needed they must be an explicit evaluation-mode parameter, never a constant change | Pattern evaluation scope per PS 26035; silent doubling would corrupt verdicts |
 | 2026-09-15 | D-20 | P1-2 VERIFICATION RECORD: all four class columns of Table 6 verified against the extracted official PDF (`required rulebook/r076-1-e06.pdf`, Table 6 on PDF page 30). Draft Class I bands corrected (0.5/1.0/1.5e at 50k/200k, unbounded 1.5e) and Class IIII corrected (0.5/1.0/1.5e at 50/200/1000 — draft rows were the §3.5.2 in-service values). `VERIFIED_CLASSES` now includes all four; strict gate retained as defense-in-depth | Wrong draft constants would have legally approved/failed real instruments |
+| 2026-09-15 | D-21 | D-14 RESOLVED: drift-watchdog limit = §3.9.2.3 (zero indication ≤ 1e per 1 °C class I; 1e per 5 °C classes II/III/IIII); default static limits −10…+40 °C (§3.9.2.1). Implemented in `instrument_service.drift_watchdog` + `GET /sessions/{id}/drift` | Extracted verbatim from the official PDF; replaces the parked guess |
+| 2026-09-15 | D-22 | Password hashing uses `bcrypt` directly (not passlib) — passlib is unmaintained and breaks with modern bcrypt | Ponytail rung 4: one installed dep, no dead abstraction |
+| 2026-09-15 | D-23 | TS mirror reporting policy: quantity fields (`error_prior`, `corrected_error`, `mpe_limit`) use Python `str(Decimal)` minimal notation; `*_in_e` fields fixed 6 dp; message mirrors the Python floor-band wording — both engines share `golden_vectors.json` as single source of truth | Identical serialization prevents drift false-alarms in conformance tests |
+| 2026-09-15 | D-24 | Phase 4 module requirements live in `frontend/src/lib/requirements.ts` with per-constant clause citations (§A.4.4.1 loads incl. 500e/2000e changeovers; eccentricity ⅓ Max + 4 quarter segments §3.6.2.1/A.4.7.1; repeatability 2×10 §A.4.10; tare ≥5 steps §A.4.6.1; creep 0/5/15/30 min + 0.5e/0.2e early-stop §A.4.11.1; zero-check 10e §A.4.2.3.2). Creep state machine is pure (`lib/creep.ts`) and unit-tested | All constants extracted verbatim from the official PDF (pages 87–92, 30); no invented numbers |
+| 2026-09-15 | D-25 | Batch-sync malformed-decimal fix: `decimal.InvalidOperation` escaped the per-row SAVEPOINT and 500'd the whole batch; `_dec()` helper now converts it to a per-row rejection with reason. Regression test added (50/50 backend tests) | Found by live e2e smoke with `indication: 'bad-number'` |
+| 2026-09-15 | D-26 | CORS default widened to loopback origins on ports 5173/4173 (localhost/127.0.0.1/[::1]); configurable via `CORS_ALLOW_ORIGINS`. Login error message now distinguishes server responses from unreachable-server failures | Users opening the app from [::1]:5173 got a false "are you offline?" |
 
 ---
 
@@ -138,17 +146,30 @@ cd backend && ./.venv/Scripts/python -m pytest      # 27 tests (golden vectors +
 | `rules.md` | Binding rules for any AI agent | ✅ current |
 | `knowledge.md` | Ponytail decision-ladder annex (D-15) | ✅ current |
 | `backend/src/engine/` | OIML math engine: contracts, class_rules, error_calc, rounding, mpe_rules, models | ✅ Phase 1 core |
-| `backend/tests/` | pytest suite (27 green) + `golden_vectors.json` (BE+FE shared) + `test_band_tables.py` (all-class edges) | ✅ green |
+| `backend/tests/` | pytest suite (49 green) + `golden_vectors.json` (BE+FE shared) + `test_api.py` + `test_band_tables.py` | ✅ green |
 | `backend/pytest.ini` / `requirements.txt` | Test config + pinned deps; local venv at `backend/.venv` | ✅ working |
-| `frontend/src/engine/` | TS mirror of engine | ⬜ not created |
-| `frontend/src/db/` | IndexedDB offline store + sync | ⬜ not created |
-| `docs/` | Rulebooks, PPT, sample reports | ⬜ not created |
+| `backend/src/core/` | config.py (env settings) + security.py (bcrypt, JWT) | ✅ Phase 2 |
+| `backend/src/db/` | models.py (5 tables, Numeric(18,6)) + database.py (engine/session) | ✅ Phase 2 |
+| `backend/src/services/` | user_service, instrument_service (Table 3 gate + drift watchdog), session_service (evaluate-at-insert, batch sync, latest-wins) | ✅ Phase 2 |
+| `backend/src/api/` | main.py + routers (auth, users, instruments, sessions, attachments, reports) + schemas + deps (RBAC) | ✅ Phase 2 |
+| `backend/scripts/seed.py` | Demo users (demo-password-2026) + Class III instrument | ✅ working |
+| `frontend/src/engine/mpe.ts` | TS engine mirror (decimal.js); 16/16 on shared golden vectors | ✅ Phase 3 |
+| `frontend/src/db/offline.ts` | Dexie IndexedDB store (sessions, observations, outbox) | ✅ Phase 3 |
+| `frontend/src/lib/sync.ts` | Outbox sync engine (server-wins, per-batch accepted/rejected) | ✅ Phase 3 |
+| `frontend/src/stores/` | auth (zustand+persist) + connectivity (health-check pill) | ✅ Phase 3 |
+| `frontend/src/pages/` | Login, Dashboard, NewEvaluation (wizard), SessionWorkspace (module tabs + gating + grid + timer + banner) | ✅ Phase 3+4 |
+| `frontend/src/components/` | VerdictBadge, ConnectivityPill, LiveValidationRow, EccentricityGrid, CreepTimerPanel, WatchdogBanner | ✅ Phase 3+4 |
+| `frontend/src/lib/requirements.ts` | Rulebook-sourced test-module requirements + completion predicates (D-24) | ✅ Phase 4 |
+| `frontend/src/lib/creep.ts` | Pure creep-timer state machine (capture points, early-termination rule) | ✅ Phase 4 |
+| `frontend/tests/phase4.test.ts` | 17 vitest cases: requirements, moduleStatus, creep machine | ✅ green |
+| `docs/` | Rulebooks live in sibling `required rulebook/` (git-ignored); PPT/sample reports pending | ⬜ partial |
 
 ---
 
 ## 7. Parking Lot (unsolved questions / TODOs)
 
-- [ ] Confirm drift-watchdog legal limit (D-14) against R 76-1 environmental requirements.
+- [x] ~~Confirm drift-watchdog legal limit (D-14)~~ RESOLVED 2026-09-15 → D-21 (§3.9.2.3: 1e/°C class I, 1e/5°C others).
+- [ ] Alembic migration chain for the 5 tables (deferred from P2-1 to Phase 7 hardening; dev uses create_all).
 - [ ] Class III n-floor nuance (Table 3): e ≥ 5 g requires n ≥ 500 (coarse-e row), e ≤ 2 g requires n ≥ 100 — make `_N_RANGE`/`_MIN_CAPACITY_IN_E` e-dependent when spec validation hardens.
 - [ ] §3.4.3: Min column of Table 3 compares against **d** (actual interval), not e — needs unit-aware comparison once `d` is always present.
 - [ ] Optional in-service MPE mode (2× Table 6, §3.5.2) as an explicit parameter — see D-19.
