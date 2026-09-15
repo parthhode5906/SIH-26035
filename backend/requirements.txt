@@ -1,0 +1,5 @@
+# Runtime dependencies (Phase 2 adds fastapi + uvicorn + sqlalchemy)
+pydantic>=2.9,<3
+
+# Test dependencies
+pytest>=8.0
