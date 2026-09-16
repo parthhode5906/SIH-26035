@@ -6,7 +6,7 @@
  * arrives from the backend after sync. Errors render under the field with
  * plain-language reasons (§7 rule 2).
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { EngineValueError, evaluate, type EvaluationResult } from '@/engine/mpe'
 import type { ScaleParameters } from '@/engine/mpe'
 import { VerdictBadge } from '@/components/VerdictBadge'
@@ -18,6 +18,8 @@ export interface LiveValidationRowProps {
   position?: string
   /** Rulebook-suggested load prefilled (§A.4.x); still editable. */
   initialLoad?: string
+  /** Scale capture fill (P6-1): token bumps to re-apply the same value. */
+  capture?: { value: string; token: number }
   onCommit: (values: {
     applied_load: string
     indication: string
@@ -27,13 +29,29 @@ export interface LiveValidationRowProps {
   }) => void
 }
 
-export function LiveValidationRow({ scale, testType, sequenceNo, position, initialLoad, onCommit }: LiveValidationRowProps) {
+export function LiveValidationRow({ scale, testType, sequenceNo, position, initialLoad, capture, onCommit }: LiveValidationRowProps) {
   const [load, setLoad] = useState(initialLoad ?? '')
   const [indication, setIndication] = useState('')
   const [dL, setDL] = useState('0')
   const [e0, setE0] = useState('0')
   const [provisional, setProvisional] = useState<EvaluationResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const previousCaptureToken = useRef<number | null>(null)
+
+  // Scale capture (P6-1): fill Indication from the stable reading and
+  // re-run the provisional verdict with the current load.
+  useEffect(() => {
+    if (!capture) return
+    if (previousCaptureToken.current === null) {
+      previousCaptureToken.current = capture.token
+      return
+    }
+    if (previousCaptureToken.current === capture.token) return
+    previousCaptureToken.current = capture.token
+    setIndication(capture.value)
+    runProvisional(load, capture.value)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capture?.token])
 
   function runProvisional(l: string, i: string) {
     if (!l || !i) {

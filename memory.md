@@ -44,10 +44,10 @@ Then follow the startup ritual in [rules.md §3](rules.md).
 | 3 | Frontend shell (auth, dashboard, PWA base) | ✅ Complete | Vite+React+Tailwind v4; TS mirror 16/16 on shared vectors; offline outbox + sync; build clean |
 | 4 | Test modules (weighing, eccentricity, repeatability, tare, creep) | ✅ Complete | Rulebook-sourced requirements (`lib/requirements.ts`), eccentricity SVG grid, creep timer, watchdog banner, finalize gating; 33/33 vitest; verified live |
 | 5 | Report generation (PDF/DOCX + QR seal) | ✅ Complete | Finalize generates sealed PDF/DOCX; public verification, path-free archive, and officer re-seal are implemented and tested |
-| 6 | Differentiators (serial, OCR, watchdog UI, public verify) | ⬜ Not started | |
+| 6 | Differentiators (serial, evidence, watchdog UI, PWA install) | ⬜ Pending gates | Camera/file evidence, drift red state, and PWA install are implemented; P6-1 hardware provenance and D-30 OCR remain pending |
 | 7 | Hardening, docs, SIH deliverables | ⬜ Not started | Alembic migrations deferred here |
 
-**Working on right now:** Phase 6 — differentiators and hardening.
+**Working on right now:** Phase 7 — hardening, docs, SIH deliverables.
 
 **Known blockers:** none.
 
@@ -132,6 +132,8 @@ cd frontend && npx vitest run                       # 16 mirror conformance test
 | 2026-09-16 | D-27 | Template spike (P5-1) resolved: **rebuild programmatically**, not DOCX sourcing — python-docx for the editable twin, ReportLab platypus for the authoritative PDF. Both render the same immutable `ReportData` snapshot, so the formats cannot drift. python-docx chosen over Docxtpl (design doc name) because it was already the docx library candidate and avoids a template-asset pipeline for one document | Template drift risk; Docxtpl adds a build asset for marginal gain |
 | 2026-09-16 | D-28 | Reports carry a **two-layer seal**: `Report.sha256` = SHA-256 of the delivered PDF bytes (byte-level tamper evidence, `reverify_bytes`); the QR embeds a *content digest* = SHA-256 over canonical JSON of `ReportData` + template version (meaning-level: survives re-render/reprint). Officer sign-off **re-renders + re-seals** so the printed signature is part of the sealed content | Single hash breaks when the file is re-rendered; QR must verify meaning not bytes |
 | 2026-09-16 | D-29 | Phase 5 renderers are Latin-1-safe: standard PDF fonts cannot encode Δ/✓/✗/em-dash — ΔL header uses the Symbol-font trick, verdicts are bold words over fills (grayscale-safe per design.md §9). Never put raw Unicode beyond Latin-1 into reportlab `drawString` | PDF rendering crashes with UnicodeEncodeError on standard fonts |
+| 2026-09-16 | D-30 | P6-2 OCR scope: automated 7-segment display OCR DEFERRED — tesseract.js is ~4 MB WASM with poor 7-segment accuracy outside controlled lighting; a wrong auto-read indication in legal metrology is worse than none (§7 rule 2 spirit). Camera value = tamper-evident evidence via the P2-7 attachment endpoint; trusted reading paths are the serial link (P6-1) or keyed entry. Revisit only with a lab-validated model | Wrong automated reads would poison legal records |
+| 2026-09-16 | D-31 | Serial stabilization LATCHES once stable — identical frames keep the capture window open; only a load change beyond tolerance restarts collection. Without the latch the Capture button flickered disabled between identical 600 ms frames (found live in preview) | Capture window closed before the tester could click |
 
 ---
 
@@ -162,6 +164,11 @@ cd frontend && npx vitest run                       # 16 mirror conformance test
 | `frontend/src/stores/` | auth (zustand+persist) + connectivity (health-check pill) | ✅ Phase 3 |
 | `frontend/src/pages/` | Login, Dashboard, NewEvaluation (wizard), SessionWorkspace (module tabs + gating + grid + timer + banner) | ✅ Phase 3+4 |
 | `frontend/src/components/` | VerdictBadge, ConnectivityPill, LiveValidationRow, EccentricityGrid, CreepTimerPanel, WatchdogBanner | ✅ Phase 3+4 |
+| `frontend/public/sw.js` | App-shell service worker with network-first navigation, generated asset precache, and cache-first static assets | ✅ Phase 6 |
+| `frontend/public/manifest.webmanifest` | PWA install metadata and icon declarations | ✅ Phase 6 |
+| `frontend/src/hooks/usePwaInstall.ts` | One-time service-worker registration and install prompt lifecycle | ✅ Phase 6 |
+| `frontend/src/hooks/useScaleConnection.ts` | Web Serial/simulator connection, frame ingestion, and stable-reading capture policy | ⚠️ Phase 6 hardware gate pending |
+| `frontend/src/components/EvidenceCapture.tsx` | Camera/file evidence capture and attachment upload; OCR deferred under D-30 | ✅ Phase 6 |
 | `frontend/src/lib/requirements.ts` | Rulebook-sourced test-module requirements + completion predicates (D-24) | ✅ Phase 4 |
 | `frontend/src/lib/creep.ts` | Pure creep-timer state machine (capture points, early-termination rule) | ✅ Phase 4 |
 | `frontend/tests/phase4.test.ts` | 17 vitest cases: requirements, moduleStatus, creep machine | ✅ green |

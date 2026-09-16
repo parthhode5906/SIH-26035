@@ -175,7 +175,8 @@ class DriftReport(BaseModel):
     allowed_drift_in_e: Decimal
     allowed_drift_in_unit: Decimal
     static_range_c: list[float]
-    level: Literal["ok", "warn"]
+    """P6-3: red = outside static range (§3.9.2) — results void, re-run."""
+    level: Literal["ok", "warn", "red"]
 
 
 # ---------------------------------------------------------------------------

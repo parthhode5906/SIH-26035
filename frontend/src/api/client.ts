@@ -242,3 +242,26 @@ export async function publicVerify(reportId: string): Promise<VerifyDto> {
 export function signSession(sessionId: string): Promise<SessionDto> {
   return request<SessionDto>(`/api/v1/reports/sessions/${sessionId}/sign`, { method: 'POST' })
 }
+
+/** P6-2 — camera/document evidence upload (10 MB, jpeg/png/webp/pdf). */
+export async function uploadAttachment(sessionId: string, file: File): Promise<{ id: string; filename: string }> {
+  const body = new FormData()
+  body.append('file', file)
+  const token = useAuthStore.getState().accessToken
+  const res = await fetch(`${BASE}/api/v1/sessions/${sessionId}/attachments`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body,
+  })
+  if (!res.ok) {
+    let detail = `upload failed (${res.status})`
+    try {
+      const errBody = (await res.json()) as { detail?: unknown }
+      if (typeof errBody.detail === 'string') detail = errBody.detail
+    } catch {
+      /* keep default */
+    }
+    throw new ApiError(res.status, detail)
+  }
+  return (await res.json()) as { id: string; filename: string }
+}

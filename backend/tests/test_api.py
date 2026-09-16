@@ -330,6 +330,69 @@ class TestObservations:
         assert body["allowed_drift_in_unit"] == "0.002000"
         assert body["level"] == "ok"
 
+    def test_drift_red_state_static_range(self, tokens, session_id) -> None:
+        """P6-3: end temp outside the static range (§3.9.2) → level=red."""
+        r = client.patch(
+            f"/api/v1/sessions/{session_id}",
+            headers=_auth(tokens["tech"]),
+            json={"end_temp_c": "45"},
+        )
+        assert r.status_code == 200
+        d = client.get(f"/api/v1/sessions/{session_id}/drift", headers=_auth(tokens["tech"]))
+        assert d.status_code == 200
+        body = d.json()
+        assert body is not None
+        assert body["level"] == "red"
+
+
+class TestDriftLevelsUnit:
+    """P6-3: level thresholds, tested directly on the service function —
+    start_temp is set at creation (PATCH is end-only by design), so the
+    warn/large-delta branches are not reachable through the API."""
+
+    from types import SimpleNamespace
+
+    def _instrument(self):
+        from decimal import Decimal as D
+
+        return self.SimpleNamespace(
+            accuracy_class=self.SimpleNamespace(value="III"),
+            verification_scale_interval=D("0.005"),
+        )
+
+    def test_large_delta_is_red(self) -> None:
+        from decimal import Decimal as D
+
+        from src.services.instrument_service import drift_watchdog
+
+        report = drift_watchdog(
+            self._instrument(), start_temp_c=D("5"), end_temp_c=D("40")
+        )
+        assert report is not None
+        assert report["level"] == "red"
+
+    def test_mid_delta_is_warn(self) -> None:
+        from decimal import Decimal as D
+
+        from src.services.instrument_service import drift_watchdog
+
+        report = drift_watchdog(
+            self._instrument(), start_temp_c=D("10"), end_temp_c=D("30")
+        )
+        assert report is not None
+        assert report["level"] == "warn"
+
+    def test_outside_static_range_is_red_even_if_delta_small(self) -> None:
+        from decimal import Decimal as D
+
+        from src.services.instrument_service import drift_watchdog
+
+        report = drift_watchdog(
+            self._instrument(), start_temp_c=D("20"), end_temp_c=D("45")
+        )
+        assert report is not None
+        assert report["level"] == "red"
+
 
 # ---------------------------------------------------------------------------
 # Append-only + supersession + batch sync

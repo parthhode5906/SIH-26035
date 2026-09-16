@@ -132,7 +132,8 @@ def drift_watchdog(instrument: Instrument, *, start_temp_c: Decimal | None, end_
     """
     if start_temp_c is None or end_temp_c is None:
         return None
-    delta_c = abs(Decimal(end_temp_c) - Decimal(start_temp_c))
+    start, end = Decimal(start_temp_c), Decimal(end_temp_c)
+    delta_c = abs(end - start)
     per_degree = settings.drift_scale_intervals_per_degree[
         instrument.accuracy_class.value
     ]
@@ -140,10 +141,21 @@ def drift_watchdog(instrument: Instrument, *, start_temp_c: Decimal | None, end_
     allowed_in_unit = (allowed_in_e * instrument.verification_scale_interval).quantize(
         _N_QUANT
     )
+    # P6-3 red state: the test ran outside the instrument's static
+    # temperature range (§3.9.2) — results are metrologically void and the
+    # affected tests must be re-run. Amber is the approaching-limit proxy.
+    t_min, t_max = settings.default_temp_min_c, settings.default_temp_max_c
+    outside_static_range = start < Decimal(t_min) or start > Decimal(t_max) or end < Decimal(t_min) or end > Decimal(t_max)
+    if outside_static_range or delta_c > Decimal(30):
+        level = "red"
+    elif delta_c > Decimal(15):
+        level = "warn"
+    else:
+        level = "ok"
     return {
         "delta_c": delta_c.quantize(Decimal("0.01")),
         "allowed_drift_in_e": allowed_in_e.quantize(Decimal("0.0001")),
         "allowed_drift_in_unit": allowed_in_unit,
-        "static_range_c": [settings.default_temp_min_c, settings.default_temp_max_c],
-        "level": "ok" if delta_c <= Decimal(30) else "warn",
+        "static_range_c": [t_min, t_max],
+        "level": level,
     }

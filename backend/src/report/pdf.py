@@ -229,6 +229,7 @@ def _body(data: ReportData) -> list[object]:
                 ("Passed", str(data.overall["pass_count"])),
                 ("Failed", str(data.overall["fail_count"])),
                 ("Worst MPE utilization", str(data.overall["worst_utilization"])),
+                ("Ambient drift (§3.9.2)", str(data.overall["drift_note"])),
                 ("Evaluation basis", str(data.overall["clause"])),
             ]
         ),

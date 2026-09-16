@@ -13,6 +13,9 @@ import { LiveValidationRow } from '@/components/LiveValidationRow'
 import { EccentricityGrid, type GridRow } from '@/components/EccentricityGrid'
 import { CreepTimerPanel } from '@/components/CreepTimerPanel'
 import { WatchdogBanner, type DriftReportDto } from '@/components/WatchdogBanner'
+import { ScaleConnectPanel } from '@/components/ScaleConnectPanel'
+import { EvidenceCapture } from '@/components/EvidenceCapture'
+import { useScaleConnection } from '@/hooks/useScaleConnection'
 import { SyncBadge, VerdictBadge } from '@/components/VerdictBadge'
 import { useConnectivity } from '@/stores/connectivity'
 import { useAuthStore } from '@/stores/auth'
@@ -33,6 +36,13 @@ export function SessionWorkspacePage() {
   const [note, setNote] = useState<string | null>(null)
   const [drift, setDrift] = useState<DriftReportDto | null>(null)
   const [report, setReport] = useState<ReportArchiveDto | null>(null)
+  // P6-1: scale link + last capture fill (token re-applies identical values).
+  const [capture, setCapture] = useState<{ value: string; token: number } | null>(null)
+  const scaleLink = useScaleConnection({
+    n: 3,
+    toleranceDivisions: 1,
+    d: Number(instrument?.scale.display_interval ?? instrument?.scale.verification_scale_interval ?? 1),
+  })
   const online = useConnectivity((s) => s.online)
   const role = useAuthStore((s) => s.role)
 
@@ -475,17 +485,25 @@ export function SessionWorkspacePage() {
         />
       )}
 
-      {session?.status === 'in_progress' && instrument && (
+      {session?.status === 'in_progress' && (
         <div className="mb-6">
-          <LiveValidationRow
-            key={`${activeTest}-${position ?? ''}`}
-            scale={instrument.scale}
-            testType={mod.title}
-            sequenceNo={nextSequenceNo}
-            position={position ?? undefined}
-            initialLoad={mod.suggestedLoads(instrument.scale)[0]}
-            onCommit={(v) => void commitRow(v)}
+          <ScaleConnectPanel
+            link={scaleLink}
+            dLabel={`d = ${instrument?.scale.display_interval ?? instrument?.scale.verification_scale_interval ?? 1} kg`}
+            onCapture={(value) => setCapture((c) => ({ value, token: (c?.token ?? 0) + 1 }))}
           />
+          {instrument && (
+            <LiveValidationRow
+              key={`${activeTest}-${position ?? ''}`}
+              scale={instrument.scale}
+              testType={mod.title}
+              sequenceNo={nextSequenceNo}
+              position={position ?? undefined}
+              initialLoad={mod.suggestedLoads(instrument.scale)[0]}
+              capture={capture ?? undefined}
+              onCommit={(v) => void commitRow(v)}
+            />
+          )}
           <p className="mt-2 text-xs text-inkmuted">
             {mod.clause} · {mod.hint}
           </p>
@@ -496,6 +514,12 @@ export function SessionWorkspacePage() {
         <p className="mb-4 rounded bg-accent/10 px-4 py-3 text-sm text-accent" role="status">
           {note}
         </p>
+      )}
+
+      {session && (
+        <div className="mb-6">
+          <EvidenceCapture sessionId={sessionId} />
+        </div>
       )}
 
       <h2 className="mb-2 text-sm font-semibold text-inkmuted uppercase tracking-wide">

@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..db.models import Instrument, Observation, Report, TestSession, User
+from ..services.instrument_service import drift_watchdog
 from ..services.session_service import latest_observations
 
 #: Display order of test sections in the report (R 76-2 layout order).
@@ -130,8 +131,28 @@ def aggregate_session(db: OrmSession, session_id: uuid.UUID) -> ReportData:
     observations_out = {k: rows_by_test[k] for k in TEST_ORDER if k in rows_by_test}
 
     # --- overall verdict -----------------------------------------------
+    # P6-3: ambient-drift flag rides in the snapshot so both renderers
+    # annotate the report identically (red = results void, re-run).
+    drift = drift_watchdog(
+        instrument,
+        start_temp_c=session.start_temp_c,
+        end_temp_c=session.end_temp_c,
+    )
+    drift_note = "not evaluated (missing start/end temperature)"
+    if drift is not None:
+        level = str(drift["level"])
+        drift_note = {
+            "ok": f"OK - delta {drift['delta_c']} °C within §3.9.2.3 limits",
+            "warn": f"APPROACHING - delta {drift['delta_c']} °C, monitor room conditions",
+            "red": (
+                f"EXCEEDED - delta {drift['delta_c']} °C or static range violated; "
+                "affected readings void under §3.9.2 - re-run affected tests"
+            ),
+        }.get(level, level)
     overall = {
-        "result": "FAIL" if verdict_counts["FAIL"] else "PASS",
+        "result": "FAIL"
+        if verdict_counts["FAIL"] or (drift is not None and drift["level"] == "red")
+        else "PASS",
         "pass_count": verdict_counts["PASS"],
         "fail_count": verdict_counts["FAIL"],
         "total": verdict_counts["PASS"] + verdict_counts["FAIL"],
@@ -139,6 +160,7 @@ def aggregate_session(db: OrmSession, session_id: uuid.UUID) -> ReportData:
             f"{float(worst_ratio):.1%}" if worst_ratio is not None else "—"
         ),
         "clause": "OIML R 76-1 (2006), §3.5 / §3.6 / §3.9 with Annex A procedures",
+        "drift_note": drift_note,
     }
 
     # --- lab + identities ----------------------------------------------

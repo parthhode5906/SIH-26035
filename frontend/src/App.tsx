@@ -7,6 +7,7 @@ import { SessionWorkspacePage } from '@/pages/SessionWorkspace'
 import { ReportsPage } from '@/pages/Reports'
 import { VerifyPage } from '@/pages/Verify'
 import { ConnectivityPill } from '@/components/ConnectivityPill'
+import { usePwaInstall } from '@/hooks/usePwaInstall'
 import { useAuthStore } from '@/stores/auth'
 import { startConnectivityWatcher } from '@/stores/connectivity'
 import { syncOutbox } from '@/lib/sync'
@@ -16,6 +17,7 @@ function RequireAuth() {
   const fullName = useAuthStore((s) => s.fullName)
   const logout = useAuthStore((s) => s.logout)
   const navigate = useNavigate()
+  const { canInstall, install } = usePwaInstall()
 
   if (!token) return <Navigate to="/login" replace />
 
@@ -33,6 +35,15 @@ function RequireAuth() {
           >
             Reports
           </Link>
+          {canInstall && (
+            <button
+              type="button"
+              onClick={install}
+              className="rounded border border-accent px-3 py-1.5 text-sm font-semibold text-accent hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-accent/40"
+            >
+              Install app
+            </button>
+          )}
           <ConnectivityPill />
           <span className="text-sm text-inkmuted">{fullName}</span>
           <button

@@ -112,12 +112,15 @@
 
 ---
 
-## Phase 6 — Differentiators (backlog-ranked)
+## Phase 6 — Differentiators (hardware/evidence gates pending)
 
-- [ ] P6-1 · Web Serial API ingestion (Chrome/Edge; capture-on-stable behavior)
-- [ ] P6-2 · OCR display capture (7-segment reading + photo attached as evidence)
-- [ ] P6-3 · Drift watchdog UI hardening (auto-flag + report annotation)
-- [ ] P6-4 · PWA installability + background sync polish
+- [ ] P6-1 · Web Serial API ingestion (Chrome/Edge; capture-on-stable behavior) *(`lib/serial.ts` parser and simulator are implemented, but Essae DS-415 grams interpretation remains PROVENANCE PENDING until the hardware gate is verified)*
+- [x] P6-2 · Camera/file evidence capture *(camera/file evidence upload wired to the P2-7 attachment endpoint)*
+- [ ] P6-2a · 7-segment OCR deferred *(D-30; requires a lab-validated model and hardware/evidence verification before implementation)*
+- [x] P6-3 · Drift watchdog UI hardening (auto-flag + report annotation) *(backend levels ok/warn/**red** — red = outside §3.9.2 static range or Δ>30 °C; banner explains metrological consequence + re-run recommendation; `drift_note` rides the ReportData snapshot into both PDF and DOCX)*
+- [x] P6-4 · PWA installability + background sync polish *(`sw.js` app-shell SW: network-first navigation, cache-first assets, API never intercepted; generated PNG icons 192/512/maskable via `scripts/gen_icons.py`; manifest updated; header Install button via `usePwaInstall`)*
+
+**Verification record (2026-09-16):** frontend 47/47 vitest (parser formats, drain, stabilization incl. latch, provenance markers); backend 66/66 pytest (drift red/warn unit tests via service — start temp is create-time only, PATCH is end-only by design); `tsc -b` + build clean; live in preview: simulator → "Stable — ready to capture" latch → Capture filled I=10.000 → commit → server verdict ✓PASS (10 kg = 2000e boundary, MPE 0.005). One real defect found & fixed live: stable-state flicker (D-31).
 
 ---
 
