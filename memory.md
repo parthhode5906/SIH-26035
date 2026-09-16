@@ -43,11 +43,11 @@ Then follow the startup ritual in [rules.md §3](rules.md).
 | 2 | Backend API + database | ✅ Complete | 16 §6 endpoints; 49/49 backend tests; D-14 drift limit verified; live HTTP smoke test passed |
 | 3 | Frontend shell (auth, dashboard, PWA base) | ✅ Complete | Vite+React+Tailwind v4; TS mirror 16/16 on shared vectors; offline outbox + sync; build clean |
 | 4 | Test modules (weighing, eccentricity, repeatability, tare, creep) | ✅ Complete | Rulebook-sourced requirements (`lib/requirements.ts`), eccentricity SVG grid, creep timer, watchdog banner, finalize gating; 33/33 vitest; verified live |
-| 5 | Report generation (PDF/DOCX + QR seal) | ⬜ Not started | Sign-off endpoint exists; rendering pending |
+| 5 | Report generation (PDF/DOCX + QR seal) | ✅ Complete | Finalize generates sealed PDF/DOCX; public verification, path-free archive, and officer re-seal are implemented and tested |
 | 6 | Differentiators (serial, OCR, watchdog UI, public verify) | ⬜ Not started | |
 | 7 | Hardening, docs, SIH deliverables | ⬜ Not started | Alembic migrations deferred here |
 
-**Working on right now:** Phase 5 — report generation (R 76-2 style PDF/DOCX, QR seal) on the finalize/sign-off flow.
+**Working on right now:** Phase 6 — differentiators and hardening.
 
 **Known blockers:** none.
 
@@ -129,6 +129,9 @@ cd frontend && npx vitest run                       # 16 mirror conformance test
 | 2026-09-15 | D-24 | Phase 4 module requirements live in `frontend/src/lib/requirements.ts` with per-constant clause citations (§A.4.4.1 loads incl. 500e/2000e changeovers; eccentricity ⅓ Max + 4 quarter segments §3.6.2.1/A.4.7.1; repeatability 2×10 §A.4.10; tare ≥5 steps §A.4.6.1; creep 0/5/15/30 min + 0.5e/0.2e early-stop §A.4.11.1; zero-check 10e §A.4.2.3.2). Creep state machine is pure (`lib/creep.ts`) and unit-tested | All constants extracted verbatim from the official PDF (pages 87–92, 30); no invented numbers |
 | 2026-09-15 | D-25 | Batch-sync malformed-decimal fix: `decimal.InvalidOperation` escaped the per-row SAVEPOINT and 500'd the whole batch; `_dec()` helper now converts it to a per-row rejection with reason. Regression test added (50/50 backend tests) | Found by live e2e smoke with `indication: 'bad-number'` |
 | 2026-09-15 | D-26 | CORS default widened to loopback origins on ports 5173/4173 (localhost/127.0.0.1/[::1]); configurable via `CORS_ALLOW_ORIGINS`. Login error message now distinguishes server responses from unreachable-server failures | Users opening the app from [::1]:5173 got a false "are you offline?" |
+| 2026-09-16 | D-27 | Template spike (P5-1) resolved: **rebuild programmatically**, not DOCX sourcing — python-docx for the editable twin, ReportLab platypus for the authoritative PDF. Both render the same immutable `ReportData` snapshot, so the formats cannot drift. python-docx chosen over Docxtpl (design doc name) because it was already the docx library candidate and avoids a template-asset pipeline for one document | Template drift risk; Docxtpl adds a build asset for marginal gain |
+| 2026-09-16 | D-28 | Reports carry a **two-layer seal**: `Report.sha256` = SHA-256 of the delivered PDF bytes (byte-level tamper evidence, `reverify_bytes`); the QR embeds a *content digest* = SHA-256 over canonical JSON of `ReportData` + template version (meaning-level: survives re-render/reprint). Officer sign-off **re-renders + re-seals** so the printed signature is part of the sealed content | Single hash breaks when the file is re-rendered; QR must verify meaning not bytes |
+| 2026-09-16 | D-29 | Phase 5 renderers are Latin-1-safe: standard PDF fonts cannot encode Δ/✓/✗/em-dash — ΔL header uses the Symbol-font trick, verdicts are bold words over fills (grayscale-safe per design.md §9). Never put raw Unicode beyond Latin-1 into reportlab `drawString` | PDF rendering crashes with UnicodeEncodeError on standard fonts |
 
 ---
 
@@ -162,19 +165,21 @@ cd frontend && npx vitest run                       # 16 mirror conformance test
 | `frontend/src/lib/requirements.ts` | Rulebook-sourced test-module requirements + completion predicates (D-24) | ✅ Phase 4 |
 | `frontend/src/lib/creep.ts` | Pure creep-timer state machine (capture points, early-termination rule) | ✅ Phase 4 |
 | `frontend/tests/phase4.test.ts` | 17 vitest cases: requirements, moduleStatus, creep machine | ✅ green |
-| `docs/` | Rulebooks live in sibling `required rulebook/` (git-ignored); PPT/sample reports pending | ⬜ partial |
+| `backend/src/report/` | Phase 5 report package: aggregate (immutable ReportData) → pdf (ReportLab) / docx (python-docx) / seal (SHA-256 + QR) / service (orchestration, two-layer seal, re-seal on sign) (D-27/D-28) | ✅ Phase 5 |
+| `backend/src/api/routers/reports.py` | Report endpoints + `public_router` (verify): list/get/download/docx, sign+re-seal, unauthenticated verify | ✅ Phase 5 |
+| `backend/tests/test_reports.py` | 12 report tests: seal integrity, PDF/DOCX content (pypdf/python-docx extraction), tamper detection, RBAC | ✅ green (62/62) |
+| `backend/scripts/smoke_phase5.py` | 23-step live report-lifecycle smoke (also a finale demo asset) | ✅ 23/23 |
+| `frontend/src/pages/Reports.tsx` · `Verify.tsx` | S6 archive (search, blob downloads, badges) + S8 public verify (authentic/tampered) | ✅ Phase 5 |
+| `docs/` | Official rulebook PDFs + `comparison-vs-r76-2.md` (P5-7); PPT pending | ⬜ growing |
 
 ---
 
 ## 7. Parking Lot (unsolved questions / TODOs)
 
-- [x] ~~Confirm drift-watchdog legal limit (D-14)~~ RESOLVED 2026-09-15 → D-21 (§3.9.2.3: 1e/°C class I, 1e/5°C others).
 - [ ] Alembic migration chain for the 5 tables (deferred from P2-1 to Phase 7 hardening; dev uses create_all).
 - [ ] Class III n-floor nuance (Table 3): e ≥ 5 g requires n ≥ 500 (coarse-e row), e ≤ 2 g requires n ≥ 100 — make `_N_RANGE`/`_MIN_CAPACITY_IN_E` e-dependent when spec validation hardens.
 - [ ] §3.4.3: Min column of Table 3 compares against **d** (actual interval), not e — needs unit-aware comparison once `d` is always present.
 - [ ] Optional in-service MPE mode (2× Table 6, §3.5.2) as an explicit parameter — see D-19.
-- [ ] Decide template procurement: rebuild R-76-2 form from scratch in ReportLab vs. DOCX template sourcing (Phase 5 spike).
-- [ ] Choose QR verification hosting approach (same backend public route vs. separate page) — Phase 5.
 - [ ] SIH submission logistics: 6-slide PPT (PDF export) + ≤3-min video — owners and dates TBD by team.
 
 ---

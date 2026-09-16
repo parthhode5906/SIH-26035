@@ -4,6 +4,8 @@ import { LoginPage } from '@/pages/Login'
 import { DashboardPage } from '@/pages/Dashboard'
 import { NewEvaluationPage } from '@/pages/NewEvaluation'
 import { SessionWorkspacePage } from '@/pages/SessionWorkspace'
+import { ReportsPage } from '@/pages/Reports'
+import { VerifyPage } from '@/pages/Verify'
 import { ConnectivityPill } from '@/components/ConnectivityPill'
 import { useAuthStore } from '@/stores/auth'
 import { startConnectivityWatcher } from '@/stores/connectivity'
@@ -25,6 +27,12 @@ function RequireAuth() {
           R-76 Compliance Suite
         </Link>
         <div className="flex items-center gap-3">
+          <Link
+            to="/reports"
+            className="rounded px-3 py-1.5 text-sm text-inkmuted hover:bg-slate-100 hover:text-ink focus:outline-none focus:ring-2 focus:ring-accent/40"
+          >
+            Reports
+          </Link>
           <ConnectivityPill />
           <span className="text-sm text-inkmuted">{fullName}</span>
           <button
@@ -64,7 +72,9 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/evaluations/new" element={<NewEvaluationPage />} />
           <Route path="/sessions/:sessionId" element={<SessionWorkspacePage />} />
+          <Route path="/reports" element={<ReportsPage />} />
         </Route>
+        <Route path="/verify/:reportId" element={<VerifyPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

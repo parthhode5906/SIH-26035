@@ -70,6 +70,12 @@ class Settings(BaseSettings):
         description="Browser origins allowed to call this API.",
     )
 
+    # --- Reports (Phase 5) ------------------------------------------------
+    reports_dir: str = Field(default="./reports")
+    #: Base URL of the public verification page the QR code points at.
+    #: Dev: Vite serves /verify/:reportId. Production: pin via env.
+    report_verify_base_url: str = Field(default="http://localhost:5173/verify")
+
     # --- Drift watchdog (D-14, verified from R 76-1 §3.9.2.3) ------------
     #: Zero-indication drift allowance: 1e per 1 degC (class I),
     #: 1e per 5 degC (classes II/III/IIII).

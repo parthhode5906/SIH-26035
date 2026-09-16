@@ -253,15 +253,28 @@ class BatchSyncResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class ReportOut(BaseModel):
-    """Report projection (file bytes served by /download)."""
+class ReportArchiveOut(BaseModel):
+    """Archive projection — never exposes server filesystem paths."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     session_id: uuid.UUID
-    file_path: str
-    docx_path: str | None
+    sha256: str
+    qr_payload: str
+    signed_by: uuid.UUID | None
+    signed_at: datetime | None
+    template_version: str
+    created_at: datetime
+
+
+class ReportOut(BaseModel):
+    """Report metadata projection; artifacts are served by download endpoints."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    session_id: uuid.UUID
     sha256: str
     qr_payload: str
     signed_by: uuid.UUID | None

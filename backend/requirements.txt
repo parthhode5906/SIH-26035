@@ -9,6 +9,11 @@ bcrypt>=4.2,<5
 python-multipart>=0.0.12          # multipart uploads (attachments)
 python-dotenv>=1.0                # .env loading for local dev
 
+# --- Report generation (Phase 5) ---------------------------------------
+reportlab>=4.2,<6                 # authoritative R-76-2 PDF rendering
+qrcode[pil]>=8.0,<9               # QR seal on the report cover page
+python-docx>=1.1,<2               # editable DOCX twin of the PDF
+
 # --- PDF extraction (rulebook verification tooling) --------------------
 pypdf>=5.0
 fonttools>=4.50

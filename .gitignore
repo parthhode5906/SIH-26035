@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Phase 5 runtime artifacts -------------------------------------------
+backend/reports/
+backend/uploads/
+
+# Official OIML publications are copyrighted (free download at oiml.org);
+# keep local copies out of the repository.
+docs/*.pdf

@@ -6,8 +6,8 @@
  * when offline and from the server when online (server authoritative).
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { api, type ObservationDto, type SessionDto } from '@/api/client'
+import { Link, useParams } from 'react-router-dom'
+import { api, reportsApi, signSession, type ObservationDto, type ReportArchiveDto, type SessionDto } from '@/api/client'
 import { db, latestLocalObservations, type OfflineObservation } from '@/db/offline'
 import { LiveValidationRow } from '@/components/LiveValidationRow'
 import { EccentricityGrid, type GridRow } from '@/components/EccentricityGrid'
@@ -15,6 +15,7 @@ import { CreepTimerPanel } from '@/components/CreepTimerPanel'
 import { WatchdogBanner, type DriftReportDto } from '@/components/WatchdogBanner'
 import { SyncBadge, VerdictBadge } from '@/components/VerdictBadge'
 import { useConnectivity } from '@/stores/connectivity'
+import { useAuthStore } from '@/stores/auth'
 import { syncOutbox } from '@/lib/sync'
 import { TEST_MODULES, moduleFor, moduleStatus } from '@/lib/requirements'
 import type { RowShape } from '@/lib/requirements'
@@ -31,7 +32,9 @@ export function SessionWorkspacePage() {
   const [endTemp, setEndTemp] = useState('')
   const [note, setNote] = useState<string | null>(null)
   const [drift, setDrift] = useState<DriftReportDto | null>(null)
+  const [report, setReport] = useState<ReportArchiveDto | null>(null)
   const online = useConnectivity((s) => s.online)
+  const role = useAuthStore((s) => s.role)
 
   const mod = moduleFor(activeTest)!
 
@@ -86,6 +89,17 @@ export function SessionWorkspacePage() {
   useEffect(() => {
     void reload()
   }, [reload, online])
+
+  // P5: fetch the session's report (post-finalize) whenever the session loads
+  // or transitions.
+  useEffect(() => {
+    if (session?.status === 'completed' || session?.status === 'approved') {
+      void loadReport()
+    } else {
+      setReport(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.status, sessionId])
 
   // Resolve instrument parameters for the TS mirror. Online: fetch and
   // cache in IndexedDB. Offline: read the cache — provisional verdicts
@@ -276,10 +290,42 @@ export function SessionWorkspacePage() {
       return
     try {
       await api.finalizeSession(sessionId)
-      setNote('Session finalized.')
+      setNote('Session finalized — R 76-2 report generated.')
       await reload()
+      await loadReport()
     } catch (err) {
       setNote(err instanceof Error ? err.message : 'finalize failed')
+    }
+  }
+
+  async function loadReport() {
+    try {
+      const all = await reportsApi.list()
+      setReport(all.find((r) => r.session_id === sessionId) ?? null)
+    } catch {
+      setReport(null)
+    }
+  }
+
+  async function sign() {
+    if (!confirm('Sign & approve this report as the Authorized Signatory?')) return
+    try {
+      await signSession(sessionId)
+      setNote('Report signed — artifacts re-rendered and re-sealed.')
+      await reload()
+      await loadReport()
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : 'sign failed')
+    }
+  }
+
+  async function download(kind: 'pdf' | 'docx') {
+    if (!report) return
+    try {
+      if (kind === 'pdf') await reportsApi.downloadPdf(report.id)
+      else await reportsApi.downloadDocx(report.id)
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : 'download failed')
     }
   }
 
@@ -327,6 +373,51 @@ export function SessionWorkspacePage() {
       </div>
 
       <WatchdogBanner report={drift} />
+
+      {report && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded border border-slate-200 bg-white p-3">
+          <div className="flex-1">
+            <p className="text-sm font-semibold">R 76-2 report generated</p>
+            <p className="font-mono text-[10px] break-all text-inkmuted">
+              SHA-256 {report.sha256.slice(0, 24)}…
+            </p>
+          </div>
+          {report.signed_at ? (
+            <span className="rounded bg-green-100 px-2 py-1 text-xs font-semibold text-green-800">✓ signed</span>
+          ) : (
+            <span className="rounded bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">awaiting sign-off</span>
+          )}
+          <button
+            type="button"
+            onClick={() => void download('pdf')}
+            className="rounded bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+          >
+            Download PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => void download('docx')}
+            className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold hover:bg-slate-100"
+          >
+            Download DOCX
+          </button>
+          <Link
+            to={`/verify/${report.id}`}
+            className="text-xs text-[var(--accent)] underline"
+          >
+            verify page
+          </Link>
+          {!report.signed_at && role === 'approving_officer' && (
+            <button
+              type="button"
+              onClick={() => void sign()}
+              className="rounded bg-pass px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+            >
+              Sign as officer
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="mb-2 flex items-center gap-3">
         <div className="h-2 flex-1 overflow-hidden rounded bg-slate-200" role="progressbar" aria-valuenow={completedCount} aria-valuemin={0} aria-valuemax={TEST_MODULES.length}>

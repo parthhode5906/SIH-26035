@@ -363,13 +363,16 @@ def finalize_session(db: Session, session: TestSession) -> TestSession:
     return session
 
 
-def mark_approved(db: Session, session: TestSession) -> TestSession:
+def mark_approved(
+    db: Session, session: TestSession, *, commit: bool = True
+) -> TestSession:
     """Officer sign-off transition."""
     if session.status != SessionStatus.COMPLETED:
         raise SessionStateError("only completed sessions can be approved")
     session.status = SessionStatus.APPROVED
-    db.commit()
-    db.refresh(session)
+    if commit:
+        db.commit()
+        db.refresh(session)
     return session
 
 

@@ -7,8 +7,10 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..deps import AnyUser, DbDep
+from ...core.config import settings
 from ...db.models import TestSession
 from ...engine import EngineValueError
+from ...report import service as report_service
 from ...services import session_service
 from ...services.instrument_service import drift_watchdog
 from ...services.session_service import DuplicateObservationError, SessionStateError
@@ -195,7 +197,8 @@ def sync_batch(
 
 @router.post("/{session_id}/finalize", response_model=SessionOut)
 def finalize_session(session_id: uuid.UUID, db: DbDep, user: AnyUser) -> SessionOut:
-    """Mark the session complete (Phase 5 wires report generation here)."""
+    """Mark the session complete and generate the sealed report (P5-2/P5-3,
+    architecture.md §7.3): report bytes exist before the response returns."""
     if user.role.value == "approving_officer":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "officers may not finalize")
     session = _get_session_or_404(db, session_id)
@@ -203,4 +206,12 @@ def finalize_session(session_id: uuid.UUID, db: DbDep, user: AnyUser) -> Session
         session = session_service.finalize_session(db, session)
     except SessionStateError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    try:
+        report_service.generate_report(
+            db, session.id, verify_base_url=settings.report_verify_base_url
+        )
+    except Exception:
+        # The completed session remains recoverable; the archive endpoint will
+        # retry report generation when storage or rendering is available.
+        db.rollback()
     return SessionOut.model_validate(session)

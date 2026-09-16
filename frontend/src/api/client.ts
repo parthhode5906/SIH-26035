@@ -15,18 +15,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = useAuthStore.getState().accessToken
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(init.headers as Record<string, string> | undefined),
-  }
-  if (token) headers.Authorization = `Bearer ${token}`
-  const res = await fetch(`${BASE}${path}`, { ...init, headers })
-  if (res.status === 401 && useAuthStore.getState().refreshToken) {
-    // One transparent refresh attempt.
-    const refreshed = await useAuthStore.getState().tryRefresh(BASE)
-    if (refreshed) return request<T>(path, init)
-  }
+  const res = await authenticatedFetch(path, init)
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`
     try {
@@ -38,6 +27,25 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(res.status, detail)
   }
   return (await res.json()) as T
+}
+
+async function authenticatedFetch(
+  path: string,
+  init: RequestInit = {},
+  allowRefresh = true,
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(init.headers as Record<string, string> | undefined),
+  }
+  const token = useAuthStore.getState().accessToken
+  if (token) headers.Authorization = `Bearer ${token}`
+  const res = await fetch(`${BASE}${path}`, { ...init, headers })
+  if (allowRefresh && res.status === 401 && useAuthStore.getState().refreshToken) {
+    const refreshed = await useAuthStore.getState().tryRefresh(BASE)
+    if (refreshed) return authenticatedFetch(path, init, false)
+  }
+  return res
 }
 
 export interface TokenPair {
@@ -149,4 +157,88 @@ export const api = {
       `/api/v1/sessions/${sessionId}/observations`,
       { method: 'POST', body: JSON.stringify(body) },
     ),
+}
+
+// --- Reports (Phase 5) --------------------------------------------------
+
+export interface ReportArchiveDto {
+  id: string
+  session_id: string
+  sha256: string
+  qr_payload: string
+  signed_by: string | null
+  signed_at: string | null
+  template_version: string
+  created_at: string
+}
+
+export interface VerifyDto {
+  report_id: string
+  session_id: string
+  template_version: string
+  content_digest: string
+  file_sha256: string
+  file_intact: boolean
+  session_status: string
+  signed: boolean
+  signed_by: string | null
+  signed_at: string | null
+  verify_base_url: string
+}
+
+export const reportsApi = {
+  list: () => request<ReportArchiveDto[]>('/api/v1/reports'),
+
+  get: (id: string) => request<ReportArchiveDto>(`/api/v1/reports/${id}`),
+
+  /** Authenticated blob download (JWT cannot ride a plain <a href>). */
+  downloadPdf: async (id: string): Promise<void> => {
+    const token = useAuthStore.getState().accessToken
+    const res = await fetch(`${BASE}/api/v1/reports/${id}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) throw new ApiError(res.status, `download failed (${res.status})`)
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `pattern-evaluation-report-${id}.pdf`
+    a.click()
+    URL.revokeObjectURL(url)
+  },
+
+  downloadDocx: async (id: string): Promise<void> => {
+    const token = useAuthStore.getState().accessToken
+    const res = await fetch(`${BASE}/api/v1/reports/${id}/docx`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) throw new ApiError(res.status, `download failed (${res.status})`)
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `pattern-evaluation-report-${id}.docx`
+    a.click()
+    URL.revokeObjectURL(url)
+  },
+}
+
+/** Public (unauthenticated) verification — the QR target. */
+export async function publicVerify(reportId: string): Promise<VerifyDto> {
+  const res = await fetch(`${BASE}/api/v1/public/verify/${reportId}`)
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`
+    try {
+      const body = (await res.json()) as { detail?: unknown }
+      if (typeof body.detail === 'string') detail = body.detail
+    } catch {
+      /* keep default */
+    }
+    throw new ApiError(res.status, detail)
+  }
+  return (await res.json()) as VerifyDto
+}
+
+export function signSession(sessionId: string): Promise<SessionDto> {
+  return request<SessionDto>(`/api/v1/reports/sessions/${sessionId}/sign`, { method: 'POST' })
 }

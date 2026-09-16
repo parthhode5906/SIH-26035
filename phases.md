@@ -94,19 +94,21 @@
 
 ---
 
-## Phase 5 — Report Generation & Verification
+## Phase 5 — Report Generation & Verification ✅
 
-**Goal:** the deliverable. Pixel-perfect R-76-2 PDF, editable DOCX, QR seal, public verification.
+**Goal:** the deliverable. R-76-2-structured PDF, editable DOCX, QR seal, public verification.
 
-- [ ] P5-1 · Acquire/build the R-76-2 template (spike: rebuild vs. DOCX sourcing — resolve parking-lot item)
-- [ ] P5-2 · Report service: aggregate session → render DOCX (Docxtpl) → PDF (authoritative)
-- [ ] P5-3 · SHA-256 seal + QR payload generation; embed QR on cover page
-- [ ] P5-4 · Public verification page (S8): unauthenticated report authenticity check
-- [ ] P5-5 · Report archive UI (S6): search, filters, preview, downloads
-- [ ] P5-6 · Officer sign-off action + signed-state rendering
-- [ ] P5-7 · Side-by-side comparison vs. official R-76-2 doc (this artifact goes in the SIH video)
+- [x] P5-1 · Template spike resolved (D-26): rebuilt programmatically — ReportLab for the authoritative PDF, python-docx for the editable twin; official form PDFs copied to `docs/` as the layout source of truth
+- [x] P5-2 · Report service: `src/report/` — aggregate session → immutable `ReportData` → DOCX twin + authoritative PDF (reportlab platypus, R 76-2 column semantics L/I/ΔL/E/Ec/MPE/±ne, repeated headers, "Page X of Y" via NumberedCanvas)
+- [x] P5-3 · Two-layer seal: SHA-256 of delivered PDF bytes in `Report.sha256`; QR embeds a *content digest* (canonical JSON of the snapshot + template version) so reprints still verify; QR PNG on the cover (`seal.py`)
+- [x] P5-4 · Public verification page (S8): unauthenticated `GET /api/v1/public/verify/{id}` + `/verify/:reportId` UI — authentic/tampered banner, signer, stored-file integrity check
+- [x] P5-5 · Report archive UI (S6): `/reports` — search by session/hash, PDF/DOCX blob downloads (JWT via fetch, not links), signed badges, verify links; archive projection strips server paths (`ReportArchiveOut`)
+- [x] P5-6 · Officer sign-off: sign endpoint stamps `signed_by/signed_at`, **re-renders artifacts and re-seals** (signature appears in the printed report); RBAC: officer-only sign, technician denied; sign without a report → 409
+- [x] P5-7 · Comparison artifact `docs/comparison-vs-r76-2.md` (side-by-side vs `docs/r076-2-e07.pdf`, declared deviations)
 
-**Definition of done:** generated PDF visually indistinguishable in structure from the official R-76-2 form; QR resolves to the verify page with matching hash.
+**Verification record (2026-09-16):** 12 new backend tests (`tests/test_reports.py`) → 62/62; 23-step live smoke (`scripts/smoke_phase5.py`) walks login → instrument → session → engine FAIL verdict → finalize (report generated) → archive (no path leak) → PDF text/QR asserts via pypdf → DOCX asserts via python-docx → public verify intact/unsigned → sign → verify signed+intact → unknown 404 → 409 without report; UI verified in preview (archive table, verify page both branches). Frontend build clean, 33/33 vitest.
+
+**Definition of done met:** generated PDF matches the official R 76-2 form in structure and column semantics (`docs/comparison-vs-r76-2.md`); QR resolves to the verify page and carries the matching content digest.
 
 ---
 

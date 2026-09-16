@@ -39,6 +39,7 @@ app.include_router(instruments.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(attachments.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
+app.include_router(reports.public_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["meta"])
