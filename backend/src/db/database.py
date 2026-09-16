@@ -38,6 +38,7 @@ def get_db() -> Generator[Session, None, None]:
 
 def create_all() -> None:
     """Create tables (dev/demo convenience; production uses Alembic)."""
+    from . import audit_models  # noqa: F401 - register the audit table
     from .models import Base  # noqa: F401 - ensure metadata is loaded
 
     Base.metadata.create_all(bind=engine)

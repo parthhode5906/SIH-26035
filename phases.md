@@ -13,7 +13,7 @@
 - [x] P0-1 · Write the five governance docs (architecture, memory, design, phases, rules)
 - [ ] P0-2 · Scaffold `backend/` + `frontend/` folders exactly per architecture.md §2
 - [ ] P0-3 · Download OIML R 76-1 + R 76-2 PDFs into `docs/` (source of truth for engine + report)
-- [ ] P0-4 · Reconcile `README.md`: tech-stack section → FastAPI/PostgreSQL/ReportLab stack per architecture.md §10; fix Getting Started commands; fill placeholders
+- [x] P0-4 · Reconcile `README.md`: tech-stack section → FastAPI/PostgreSQL/ReportLab stack per architecture.md §10; fix Getting Started commands; fill placeholders
 - [ ] P0-5 · Add SIH deliverables skeleton to `docs/` (PPT outline, video script)
 
 **Definition of done:** repo structure matches architecture.md §2; README no longer contradicts the architecture; rulebooks present in `docs/`.
@@ -124,13 +124,15 @@
 
 ---
 
-## Phase 7 — Hardening & SIH Deliverables
+## Phase 7 — Hardening & SIH Deliverables ✅
 
-- [ ] P7-1 · Audit log (actor/action/timestamp) on all writes
-- [ ] P7-2 · Backup/restore runbook; deployment docs (Docker compose, env matrix)
-- [ ] P7-3 · Technical documentation: architecture, calculation methodology, deployment (SIH requirement)
-- [ ] P7-4 · Seed/demo dataset for the finale demo
-- [ ] P7-5 · PPT (6 slides, PDF export) + ≤3-min video per the scripts in `docs/`
+- [x] P7-1 · Audit log (actor/action/timestamp) on all writes *(`audit_log` table + hash-chained service: row_hash = SHA-256(prev ‖ canonical row); wired into login (success AND failure), instrument create, session create/env patch, observation create + batch sync, attachment upload, finalize (+ report-failure flag), report sign; admin-only `GET /users/audit` + `/users/audit/verify`; audit write failure RAISES in production, logs in dev; 6 new tests → 73/73)*
+- [x] P7-2 · Backup/restore runbook; deployment docs (Docker compose, env matrix) *(`deploy/`: compose with healthchecked Postgres 16 + backend + nginx PWA proxy, backend/frontend Dockerfiles, `.env.example` (procedures only, git-ignored real file), runbook with backup/restore + report-integrity consistency check; Docker unavailable on the build machine — compose validated by review, first `up` documented as the gate)*
+- [x] P7-3 · Technical documentation: architecture, calculation methodology, deployment (SIH requirement) *(`docs/technical-documentation.md`: module map, three data-integrity invariants, full MPE methodology incl. all four class band tables + worked golden-vector example, report pipeline, two-layer seal rationale, audit design, offline design, deployment summary, test-estate inventory)*
+- [x] P7-4 · Seed/demo dataset for the finale demo *(`scripts/seed_finale.py`, idempotent: 3 instruments across classes I/III/IIII — Table-3-validated, the approved-session-with-FAIL story, the in-progress workspace story)*
+- [x] P7-5 · PPT (6 slides, PDF export) + ≤3-min video per the scripts in `docs/` *(`docs/ppt-and-video-script.md`: 6-slide outline + timed ≤3:00 recording script with the exact demo values and a recording checklist)*
+
+**Verification record (2026-09-16):** backend 73/73 (6 new audit tests: records on writes, admin-only reads, login-failure audit, chain intact, chain tamper-detection); frontend 47/47; build clean; **live audit smoke** against the restarted server: create→audited, tech 403 on trail read, chain intact (head hash returned), failed login audited. README reconciled with the real stack and commands (P0-4 closed): actual tech-stack table, working Getting Started, true project structure.
 
 ---
 

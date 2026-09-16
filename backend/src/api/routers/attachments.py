@@ -9,9 +9,11 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile, status
+from fastapi import APIRouter, HTTPException, Request, UploadFile, status
 
+from ..audit_helpers import audit
 from ..deps import AnyUser, DbDep
+from ...db.audit_models import AuditAction
 from ...core.config import settings
 from ...db.models import TestSession
 from ...services.session_service import get_session
@@ -28,9 +30,10 @@ def _uploads_root() -> Path:
 @router.post("/{session_id}/attachments", status_code=status.HTTP_201_CREATED)
 async def upload_attachment(
     session_id: uuid.UUID,
+    request: Request,
     file: UploadFile,
     db: DbDep,
-    _user: AnyUser,
+    user: AnyUser,
 ) -> dict[str, str]:
     """Upload a photo/document for a session (10 MB, jpeg/png/webp/pdf)."""
     session: TestSession | None = get_session(db, session_id)
@@ -52,6 +55,16 @@ async def upload_attachment(
     suffix = Path(file.filename or "upload.bin").suffix[:8]
     dest = _uploads_root() / f"{uuid.uuid4().hex}{suffix}"
     dest.write_bytes(payload)
+    try:
+        audit(
+            db, request, user, AuditAction.UPLOAD, "attachment.upload",
+            object_ref=f"TestSession:{session_id}",
+            detail={"stored_as": dest.name, "content_type": file.content_type,
+                    "size": len(payload)},
+        )
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
     return {
         "stored_as": dest.name,
         "size_bytes": str(len(payload)),

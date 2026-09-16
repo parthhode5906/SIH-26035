@@ -38,16 +38,16 @@ Then follow the startup ritual in [rules.md §3](rules.md).
 
 | Phase | Name | Status | Notes |
 |---|---|---|---|
-| 0 | Planning & governance docs | ✅ Complete | These five docs; README reconciliation still pending (task P0-4 in phases.md) |
+| 0 | Planning & governance docs | ✅ Complete | Governance docs and README reconciliation complete (P0-4) |
 | 1 | Core metrology engine + tests | ✅ Complete | 27/27 pytest green; P1-2 verification done 2026-09-15 (all four classes vs official PDF) |
 | 2 | Backend API + database | ✅ Complete | 16 §6 endpoints; 49/49 backend tests; D-14 drift limit verified; live HTTP smoke test passed |
 | 3 | Frontend shell (auth, dashboard, PWA base) | ✅ Complete | Vite+React+Tailwind v4; TS mirror 16/16 on shared vectors; offline outbox + sync; build clean |
 | 4 | Test modules (weighing, eccentricity, repeatability, tare, creep) | ✅ Complete | Rulebook-sourced requirements (`lib/requirements.ts`), eccentricity SVG grid, creep timer, watchdog banner, finalize gating; 33/33 vitest; verified live |
 | 5 | Report generation (PDF/DOCX + QR seal) | ✅ Complete | Finalize generates sealed PDF/DOCX; public verification, path-free archive, and officer re-seal are implemented and tested |
 | 6 | Differentiators (serial, evidence, watchdog UI, PWA install) | ⬜ Pending gates | Camera/file evidence, drift red state, and PWA install are implemented; P6-1 hardware provenance and D-30 OCR remain pending |
-| 7 | Hardening, docs, SIH deliverables | ⬜ Not started | Alembic migrations deferred here |
+| 7 | Hardening, docs, SIH deliverables | ✅ Complete | Hash-chained audit log on all writes; deploy/ compose+runbook; technical documentation; seed_finale; PPT/video scripts; README reconciled (P0-4). 73/73 backend, 47/47 frontend |
 
-**Working on right now:** Phase 7 — hardening, docs, SIH deliverables.
+**Working on right now:** Phase 7 hardening follow-up — Alembic rollout and the real-hardware serial gate remain pending while the Phase 6 checklist is not fully complete.
 
 **Known blockers:** none.
 
@@ -134,6 +134,8 @@ cd frontend && npx vitest run                       # 16 mirror conformance test
 | 2026-09-16 | D-29 | Phase 5 renderers are Latin-1-safe: standard PDF fonts cannot encode Δ/✓/✗/em-dash — ΔL header uses the Symbol-font trick, verdicts are bold words over fills (grayscale-safe per design.md §9). Never put raw Unicode beyond Latin-1 into reportlab `drawString` | PDF rendering crashes with UnicodeEncodeError on standard fonts |
 | 2026-09-16 | D-30 | P6-2 OCR scope: automated 7-segment display OCR DEFERRED — tesseract.js is ~4 MB WASM with poor 7-segment accuracy outside controlled lighting; a wrong auto-read indication in legal metrology is worse than none (§7 rule 2 spirit). Camera value = tamper-evident evidence via the P2-7 attachment endpoint; trusted reading paths are the serial link (P6-1) or keyed entry. Revisit only with a lab-validated model | Wrong automated reads would poison legal records |
 | 2026-09-16 | D-31 | Serial stabilization LATCHES once stable — identical frames keep the capture window open; only a load change beyond tolerance restarts collection. Without the latch the Capture button flickered disabled between identical 600 ms frames (found live in preview) | Capture window closed before the tester could click |
+| 2026-09-16 | D-32 | Audit rows COMMIT independently (`record()` commits its own transaction) — services commit their writes before the router audits, and `get_db` closes without committing, so a flush-only audit row dies with the request session (found by test: empty trail despite successful create) | Audit trail silently empty in production |
+| 2026-09-16 | D-33 | Audit hash payload normalizes timestamps to UTC-naive ISO text (`_at_text`): SQLite strips tzinfo on round-trip (aware at write, naive at read), so hashing `isoformat()` directly broke chain verification across sessions | Chain reported tampered on intact data |
 
 ---
 
@@ -143,7 +145,7 @@ cd frontend && npx vitest run                       # 16 mirror conformance test
 
 | Path | What it is | Status |
 |---|---|---|
-| `README.md` | Public summary; **needs tech-stack + runbook reconciliation** with architecture.md | ⚠️ pending (P0-4) |
+| `README.md` | Public summary, stack, runbook, and capability scope | ✅ current (P0-4) |
 | `architecture.md` | Canonical system/backend architecture | ✅ current |
 | `memory.md` | This file — state + decisions | ✅ current |
 | `design.md` | UI/UX spec + design tokens + PDF aesthetics | ✅ current |

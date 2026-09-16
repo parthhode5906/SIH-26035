@@ -224,3 +224,6 @@ backend/uploads/
 # Official OIML publications are copyrighted (free download at oiml.org);
 # keep local copies out of the repository.
 docs/*.pdf
+
+# deploy secrets
+deploy/.env

@@ -15,7 +15,7 @@
 ## 💡 Our Solution
 
 We built a browser-based Metrology Compliance Engine that:
-1. **Ingests** weighing data directly from the instrument (serial connection or OCR from a display photo) — no manual transcription.
+1. **Ingests** weighing data directly from the instrument through a serial connection or built-in simulator — no manual transcription.
 2. **Computes** e, MPE, and pass/fail status deterministically using codified OIML R-76 formulas — no spreadsheet drift.
 3. **Monitors** ambient lab conditions throughout the test cycle to flag environmental non-compliance.
 4. **Generates** a pixel-perfect PDF report matching the official R-76-2 pattern evaluation format, sealed with a tamper-evident QR code.
@@ -29,7 +29,7 @@ All of this runs **offline-first** as a PWA, so labs with unreliable connectivit
 | Feature | Description |
 |---|---|
 | **Metrology Compliance Engine** | Deterministic calculation of Verification Scale Interval (e) and Maximum Permissible Error (MPE) for Accuracy Classes I, II, III, and IIII per OIML R-76 |
-| **Multi-Mode Data Ingestion** | Web Serial API for direct RS-232/USB scale connection; OCR fallback for reading 7-segment digital displays from photos |
+| **Direct Data Ingestion** | Web Serial API for direct RS-232/USB scale connection, capture-on-stable readings, and a built-in simulator |
 | **Environmental Drift Watchdog** | Continuous logging of temperature, relative humidity, and barometric pressure during the test cycle, with automatic flagging if conditions drift outside permissible bounds |
 | **Interactive Eccentricity Diagram** | 2D interactive weighing-pan diagram to guide and record the eccentricity (corner-loading) test |
 | **Pixel-Perfect PDF Generation** | Output report matches the official OIML R-76-2 pattern evaluation report layout, down to spacing and table structure |
@@ -40,67 +40,91 @@ All of this runs **offline-first** as a PWA, so labs with unreliable connectivit
 
 ## 🏗️ Tech Stack
 
-- **Frontend:** Progressive Web App (PWA), IndexedDB for offline storage
-- **Hardware Interface:** Web Serial API (RS-232/USB)
-- **Computer Vision:** OCR engine for 7-segment display reading
-- **PDF Generation:** [Your PDF library, e.g. pdf-lib / jsPDF] for pixel-accurate R-76-2 layout replication
-- **Security:** Cryptographic hashing (e.g. SHA-256) + QR code generation for report integrity
-- **Core Logic:** Deterministic JavaScript/TypeScript math engine implementing OIML R-76 formulas
+- **Frontend:** React 19 + TypeScript + Vite PWA (Tailwind v4, Zustand, Dexie/IndexedDB, service worker)
+- **Backend:** Python FastAPI + SQLAlchemy 2 — PostgreSQL in production, SQLite for dev
+- **Core logic:** pure-Python `decimal` engine (zero floats) + a TypeScript mirror (decimal.js) that runs the *same* golden-vector test file
+- **Reports:** ReportLab (authoritative PDF) + python-docx (editable Word twin), both from one immutable snapshot
+- **Sealing:** SHA-256 file digest + QR content digest; public verification page
+- **Hardware:** Web Serial API (Chrome/Edge, 9600 8N1) with capture-on-stable + built-in simulator
+- **Security:** JWT auth (bcrypt), RBAC, append-only observations, hash-chained audit log
 
 ## 🧮 Metrology Engine — Core Logic
 
 ```
-Input:  Accuracy Class (I / II / III / IIII), Max Capacity, Min Capacity, e (verification scale interval)
-Output: MPE at each test load, Pass/Fail determination per OIML R-76 Table
+Input:  Accuracy Class (I / II / III / IIII), Max, Min, d
+Derived server-side: e (the verification scale interval) from the instrument contract
+Output: E, Ec, MPE and Pass/Fail per test load — computed server-side at insert
 
-1. Determine e and number of verification scale intervals (n = Max / e)
-2. Look up MPE bands based on Accuracy Class and n
-3. Compare actual reading deviation against MPE at each test load
-4. Flag Pass / Fail / Marginal per load point
-5. Aggregate results into the final pattern evaluation verdict
+1. Validate the instrument against R 76-1 Table 3 (n = Max/e class ranges)
+2. Error prior to rounding:  E  = I + ½·e − ΔL − L          (§A.4.4.3)
+3. Corrected error:          Ec = E − E₀
+4. MPE from the Table-6 band for the class at m = L/e (inclusive upper edge)
+5. Verdict: PASS iff |Ec| ≤ MPE  — stored, never recomputed client-side
 ```
+
+Full methodology (all four class band tables, worked example, ambient-drift
+rules): [`docs/technical-documentation.md`](docs/technical-documentation.md).
 
 ---
 
 ## 🚀 Getting Started
 
+**Backend** (Python 3.12):
+
 ```bash
-# Clone the repository
-git clone https://github.com/pratikyeokar8b40/OMIL-R76-compliance-engine.git
-cd OMIL-R76-compliance-engine
-
-# Install dependencies
-npm install
-
-# Run locally
-npm run dev
+cd backend
+python -m venv .venv
+# Windows PowerShell:
+.\.venv\Scripts\Activate.ps1
+# Unix-like shells (including Git Bash):
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m scripts.seed            # demo users (demo-password-2026) + instrument
+python -m uvicorn src.api.main:app --host :: --port 8000
 ```
 
-Open `http://localhost:<port>` in a Web Serial API–compatible browser (Chrome/Edge) to connect to a physical scale, or use the OCR upload flow for offline/manual testing.
+**Frontend** (Node 22):
+
+```bash
+cd frontend
+npm install
+npm run dev           # http://localhost:5173 (proxies /api to :8000)
+```
+
+Sign in as `tech@lab.gov.in` / `demo-password-2026` (officer and admin
+accounts exist too). For the full finale demo dataset run
+`python -m scripts.seed_finale`.
+
+**Docker (production-style):** see [`deploy/README.md`](deploy/README.md) —
+one compose file brings up Postgres + backend + nginx-served PWA.
 
 ---
 
 ## 📂 Project Structure
 
 ```
-oiml-r76-compliance-engine/
+OMIL-R76-compliance-engine/
 ├── backend/                   # Python FastAPI Backend
 │   ├── src/
-│   │   ├── engine/            # OIML R-76 math engine (e, MPE, pass/fail logic)
-│   │   ├── environment/       # Drift watchdog (temp/humidity/pressure monitoring)
-│   │   ├── report/            # PDF generation (ReportLab) + Crypto QR sealing
-│   │   ├── api/               # REST endpoints mapping frontend to the engine
-│   │   └── db/                # PostgreSQL database models and schemas
-│   └── requirements.txt
+│   │   ├── engine/            # OIML R-76 math engine (Decimal-only, band tables)
+│   │   ├── services/          # workflow orchestration (sessions, instruments, audit)
+│   │   ├── api/               # FastAPI routers, Pydantic schemas, RBAC, audit glue
+│   │   ├── report/            # aggregate → ReportLab PDF + DOCX twin + QR seal
+│   │   └── db/                # SQLAlchemy models (append-only observations + audit log)
+│   ├── tests/                 # 73 tests incl. golden vectors shared with the frontend
+│   └── scripts/               # seed, seed_finale, smoke scripts, icon generator
 ├── frontend/                  # React PWA Frontend
 │   ├── src/
-│   │   ├── ingestion/         # Web Serial API + Camera OCR modules
-│   │   ├── components/        # UI incl. interactive eccentricity diagram & test grids
-│   │   ├── db/                # IndexedDB offline storage syncing logic
-│   │   └── pages/             # Dashboard, Test Sessions, and Login views
-│   ├── public/                # PWA manifest, offline service workers, icons
-│   └── package.json
-├── docs/                      # SIH PPT, OIML R-76 rulebooks, sample PDF reports
+│   │   ├── engine/            # TS mirror of the Python engine (same golden vectors)
+│   │   ├── hooks/             # useScaleConnection (Web Serial), usePwaInstall
+│   │   ├── components/        # live validation row, eccentricity grid, evidence, panels
+│   │   ├── db/                # IndexedDB offline store + outbox
+│   │   ├── lib/               # requirements.ts (rulebook predicates), serial.ts, sync
+│   │   └── pages/             # Dashboard, Workspace, Reports, Verify, Login
+│   ├── public/                # PWA manifest, service worker, icons
+│   └── tests/                 # mirror conformance + module tests (47)
+├── deploy/                    # docker-compose, Dockerfiles, nginx, runbook
+├── docs/                      # technical documentation, R 76-2 comparison, PPT/video scripts
 └── README.md
 
 ---
@@ -108,8 +132,8 @@ oiml-r76-compliance-engine/
 ## 🎯 What Makes This Different
 
 - **Deterministic, not discretionary** — calculations follow codified OIML formulas, removing human/spreadsheet error.
-- **Hardware-aware** — direct serial ingestion is a rare capability among report-generation tools in this space.
-- **Verifiable at a glance** — the QR-hash seal lets any inspector or auditor confirm a report hasn't been altered, without needing the original software.
+- **Hardware-aware** — direct serial ingestion (capture-on-stable) plus a built-in simulator; camera evidence is supported, while OCR display reading remains deliberately deferred.
+- **Verifiable at a glance** — the two-layer seal (file SHA-256 + QR content digest) lets any inspector confirm a report hasn't been altered, via a public page that needs no login.
 - **Built for real lab conditions** — offline-first design and environmental monitoring address practical failure points that purely digital form-fillers ignore.
 
 ---

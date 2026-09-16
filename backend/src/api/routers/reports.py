@@ -16,9 +16,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 
+from ..audit_helpers import audit
+from ...db.audit_models import AuditAction
 from ..deps import AnyUser, DbDep, OfficerOnly
 from ...core.config import settings
 from ...db.models import Report, TestSession, User
@@ -124,6 +126,7 @@ def public_verify(report_id: uuid.UUID, db: DbDep) -> dict[str, Any]:
 @router.post("/sessions/{session_id}/sign", response_model=SessionOut)
 def sign_session(
     session_id: uuid.UUID,
+    request: Request,
     db: DbDep,
     officer: OfficerOnly,
     report_id: uuid.UUID | None = None,
@@ -168,4 +171,9 @@ def sign_session(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "report sign-off artifacts could not be stored",
         ) from exc
+    audit(
+        db, request, officer, AuditAction.TRANSITION, "report.sign",
+        object_ref=f"Report:{report.id}",
+        detail={"session": str(session_id), "sha256": report.sha256},
+    )
     return SessionOut.model_validate(session)

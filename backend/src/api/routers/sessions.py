@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from ..audit_helpers import audit
 from ..deps import AnyUser, DbDep
+from ...db.audit_models import AuditAction
 from ...core.config import settings
 from ...db.models import TestSession
 from ...engine import EngineValueError
@@ -38,7 +40,7 @@ def _get_session_or_404(db_session, session_id: uuid.UUID) -> TestSession:
 
 
 @router.post("", response_model=SessionOut, status_code=status.HTTP_201_CREATED)
-def create_session(body: SessionCreate, db: DbDep, user: AnyUser) -> SessionOut:
+def create_session(body: SessionCreate, request: Request, db: DbDep, user: AnyUser) -> SessionOut:
     """Start a new evaluation campaign (technician workflow)."""
     if user.role.value == "approving_officer":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "officers may not open sessions")
@@ -54,6 +56,11 @@ def create_session(body: SessionCreate, db: DbDep, user: AnyUser) -> SessionOut:
         start_temp_c=body.start_temp_c,
         humidity_pct=body.humidity_pct,
         pressure_hpa=body.pressure_hpa,
+    )
+    audit(
+        db, request, user, AuditAction.CREATE, "session.create",
+        object_ref=f"TestSession:{session.id}",
+        detail={"instrument_id": str(body.instrument_id)},
     )
     return SessionOut.model_validate(session)
 
@@ -88,7 +95,7 @@ def read_session(session_id: uuid.UUID, db: DbDep, _user: AnyUser) -> SessionOut
 
 @router.patch("/{session_id}", response_model=SessionOut)
 def patch_session(
-    session_id: uuid.UUID, body: SessionPatch, db: DbDep, _user: AnyUser
+    session_id: uuid.UUID, body: SessionPatch, request: Request, db: DbDep, user: AnyUser
 ) -> SessionOut:
     """Update environmental conditions."""
     session = _get_session_or_404(db, session_id)
@@ -98,6 +105,12 @@ def patch_session(
         end_temp_c=body.end_temp_c,
         humidity_pct=body.humidity_pct,
         pressure_hpa=body.pressure_hpa,
+    )
+    audit(
+        db, request, user, AuditAction.UPDATE, "session.patch_env",
+        object_ref=f"TestSession:{session.id}",
+        detail={"end_temp_c": str(body.end_temp_c) if body.end_temp_c is not None else None,
+            "humidity_pct": str(body.humidity_pct) if body.humidity_pct is not None else None},
     )
     return SessionOut.model_validate(session)
 
@@ -122,6 +135,7 @@ def read_drift(session_id: uuid.UUID, db: DbDep, _user: AnyUser) -> DriftReport 
 def add_observation(
     session_id: uuid.UUID,
     body: ObservationCreate,
+    request: Request,
     db: DbDep,
     user: AnyUser,
 ) -> ObservationCreatedResponse:
@@ -150,6 +164,12 @@ def add_observation(
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except EngineValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    audit(
+        db, request, user, AuditAction.CREATE, "observation.create",
+        object_ref=f"Observation:{row.id}",
+        detail={"session": str(session_id), "test": body.test_type,
+                "verdict": evaluation["verdict"] if isinstance(evaluation, dict) else evaluation.verdict},
+    )
     report = drift_watchdog(
         session.instrument,
         start_temp_c=session.start_temp_c,
@@ -179,6 +199,7 @@ def list_observations(
 def sync_batch(
     session_id: uuid.UUID,
     body: BatchSyncRequest,
+    request: Request,
     db: DbDep,
     user: AnyUser,
 ) -> BatchSyncResponse:
@@ -192,11 +213,16 @@ def sync_batch(
         )
     except SessionStateError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    audit(
+        db, request, user, AuditAction.CREATE, "observation.batch_sync",
+        object_ref=f"TestSession:{session_id}",
+        detail={"accepted": result.get("accepted"), "rejected": result.get("rejected")},
+    )
     return BatchSyncResponse(**result)
 
 
 @router.post("/{session_id}/finalize", response_model=SessionOut)
-def finalize_session(session_id: uuid.UUID, db: DbDep, user: AnyUser) -> SessionOut:
+def finalize_session(session_id: uuid.UUID, request: Request, db: DbDep, user: AnyUser) -> SessionOut:
     """Mark the session complete and generate the sealed report (P5-2/P5-3,
     architecture.md §7.3): report bytes exist before the response returns."""
     if user.role.value == "approving_officer":
@@ -214,4 +240,12 @@ def finalize_session(session_id: uuid.UUID, db: DbDep, user: AnyUser) -> Session
         # The completed session remains recoverable; the archive endpoint will
         # retry report generation when storage or rendering is available.
         db.rollback()
+        audit(
+            db, request, user, AuditAction.TRANSITION, "session.finalize_report_failed",
+            object_ref=f"TestSession:{session.id}",
+        )
+    audit(
+        db, request, user, AuditAction.TRANSITION, "session.finalize",
+        object_ref=f"TestSession:{session.id}",
+    )
     return SessionOut.model_validate(session)

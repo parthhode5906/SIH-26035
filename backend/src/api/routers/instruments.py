@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
+from ..audit_helpers import audit
 from ..deps import DbDep, TechnicianOnly, TechnicianPlus
+from ...db.audit_models import AuditAction
 from ...services.instrument_service import (
     InstrumentValidationError,
     create_instrument,
@@ -20,7 +22,7 @@ router = APIRouter(prefix="/instruments", tags=["instruments"])
 
 @router.post("", response_model=InstrumentOut, status_code=status.HTTP_201_CREATED)
 def register_instrument(
-    body: InstrumentCreate, db: DbDep, user: TechnicianOnly
+    body: InstrumentCreate, request: Request, db: DbDep, user: TechnicianOnly
 ) -> InstrumentOut:
     """Register an instrument — rejected unless R 76-1 Table 3 is satisfied."""
     try:
@@ -39,6 +41,11 @@ def register_instrument(
         )
     except InstrumentValidationError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, exc.reason) from exc
+    audit(
+        db, request, user, AuditAction.CREATE, "instrument.create",
+        object_ref=f"Instrument:{instrument.id}",
+        detail={"serial": instrument.serial_number, "class": instrument.accuracy_class.value},
+    )
     return InstrumentOut.model_validate(instrument)
 
 
