@@ -244,7 +244,13 @@ export function signSession(sessionId: string): Promise<SessionDto> {
 }
 
 /** P6-2 — camera/document evidence upload (10 MB, jpeg/png/webp/pdf). */
-export async function uploadAttachment(sessionId: string, file: File): Promise<{ id: string; filename: string }> {
+export interface AttachmentDto {
+  stored_as: string
+  size_bytes: string
+  content_type: string
+}
+
+export async function uploadAttachment(sessionId: string, file: File): Promise<AttachmentDto> {
   const body = new FormData()
   body.append('file', file)
   const token = useAuthStore.getState().accessToken
@@ -263,5 +269,5 @@ export async function uploadAttachment(sessionId: string, file: File): Promise<{
     }
     throw new ApiError(res.status, detail)
   }
-  return (await res.json()) as { id: string; filename: string }
+  return (await res.json()) as AttachmentDto
 }

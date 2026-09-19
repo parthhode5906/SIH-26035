@@ -38,7 +38,7 @@ export function EvidenceCapture({ sessionId }: { sessionId: string }) {
     setMsg(null)
     try {
       const res = await uploadAttachment(sessionId, file)
-      setMsg(`Evidence stored (${res.filename}) — visible in the report attachments index.`)
+      setMsg(`Evidence stored (${res.stored_as}) — visible in the report attachments index.`)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'upload failed')
     } finally {
