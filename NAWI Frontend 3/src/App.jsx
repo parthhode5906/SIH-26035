@@ -21,6 +21,9 @@ import NotFound from '@/pages/NotFound';
 import Registry from '@/pages/Registry';
 import Admin from '@/pages/Admin';
 import { syncOutbox } from '@/lib/sync';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { AUDIT_ROLES, REGISTRY_ROLES, hasRole } from '@/lib/roles';
+import { ShieldOff } from 'lucide-react';
 
 const queryClient = new QueryClient();
 
@@ -49,6 +52,27 @@ function Shell({ children }) {
   );
 }
 
+// Route-level RBAC guard. The server is the real enforcement point, but the
+// UI should reflect it too: a technician who bookmarks or types /admin
+// shouldn't land on a fully rendered governance console.
+function RequireRole({ roles, children }) {
+  const user = useCurrentUser();
+  if (hasRole(user, roles)) return children;
+  return (
+    <div className="panel mx-auto max-w-lg p-8 text-center">
+      <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#f7dfdc] text-[#b24b43]">
+        <ShieldOff size={22} />
+      </div>
+      <h2 className="mt-4 text-lg font-semibold">Restricted to authorized roles</h2>
+      <p className="mt-2 text-sm leading-6 text-[#66837d]">
+        {user?.role
+          ? `Your role (${user.role}) doesn't have access to this area.`
+          : 'Sign in with an authorized account to view this area.'}
+      </p>
+    </div>
+  );
+}
+
 function AppRoutes() {
   return (
     <Switch>
@@ -58,8 +82,26 @@ function AppRoutes() {
       <Route path="/evaluations/new" component={() => <Shell><NewEvaluation /></Shell>} />
       <Route path="/sessions/active" component={() => <Shell><ActiveSession /></Shell>} />
       <Route path="/reports" component={() => <Shell><Reports /></Shell>} />
-      <Route path="/instruments" component={() => <Shell><Registry /></Shell>} />
-      <Route path="/admin" component={() => <Shell><Admin /></Shell>} />
+      <Route
+        path="/instruments"
+        component={() => (
+          <Shell>
+            <RequireRole roles={REGISTRY_ROLES}>
+              <Registry />
+            </RequireRole>
+          </Shell>
+        )}
+      />
+      <Route
+        path="/admin"
+        component={() => (
+          <Shell>
+            <RequireRole roles={AUDIT_ROLES}>
+              <Admin />
+            </RequireRole>
+          </Shell>
+        )}
+      />
       <Route path="/verify/:id">{(params) => <Verify id={params.id} />}</Route>
       <Route path="/verify/NR-2026-0047" component={() => <Verify id="NR-2026-0047" />} />
       <Route path="/login" component={Login} />

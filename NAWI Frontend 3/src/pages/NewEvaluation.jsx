@@ -12,7 +12,10 @@ const modules = [
   { label: 'Zero check', short: '03' },
   { label: 'Eccentricity', short: '04' },
   { label: 'Repeatability', short: '05' },
-  { label: 'Verdict', short: '06' },
+  { label: 'Linearity', short: '06' },
+  { label: 'Creep', short: '07' },
+  { label: 'Discrimination', short: '08' },
+  { label: 'Verdict', short: '09' },
 ];
 
 export function NewEvaluation() {
@@ -207,7 +210,7 @@ export function NewEvaluation() {
           </section>
 
           <section className="panel p-5">
-            <div className="eyebrow">Sequence / 06 modules</div>
+            <div className="eyebrow">Sequence / {modules.length} modules</div>
             <div className="mt-4 space-y-4">
               {modules.map((module, index) => (
                 <div key={module.short} className="flex items-center gap-3 text-xs">

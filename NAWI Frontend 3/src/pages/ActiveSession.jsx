@@ -4,6 +4,7 @@ import IdentificationModule from '@/components/modules/IdentificationModule';
 import EnvironmentModule from '@/components/modules/EnvironmentModule';
 import ReadingModule from '@/components/modules/ReadingModule';
 import EccentricityModule from '@/components/modules/EccentricityModule';
+import CreepModule from '@/components/modules/CreepModule';
 import VerdictModule from '@/components/modules/VerdictModule';
 import Button from '@/components/Button';
 import { evaluateObservation } from '@/lib/metrology';
@@ -42,17 +43,24 @@ export function ActiveSession() {
   const [note, setNote] = useState('');
   const [apiError, setApiError] = useState('');
   const [finalized, setFinalized] = useState(false);
+  const [creepReadings, setCreepReadings] = useState([]);
+  const [creepTimer, setCreepTimer] = useState({ running: false, startedAt: null, accumulatedMs: 0 });
+  const [, forceTick] = useState(0);
 
   const current = modules[moduleIndex];
 
   useEffect(() => {
     if (session.readings) setReadings(session.readings);
     if (session.observations) setObservations(session.observations);
+    if (session.creepReadings) setCreepReadings(session.creepReadings);
+    if (session.creepTimer) setCreepTimer(session.creepTimer);
     loadWorkingSession((stored) => {
       if (stored) {
         setSession(stored);
         setReadings(stored.readings || []);
         setObservations(stored.observations || []);
+        setCreepReadings(stored.creepReadings || []);
+        if (stored.creepTimer) setCreepTimer(stored.creepTimer);
       }
     });
     if (session.id && !String(session.id).startsWith('local-')) {
@@ -60,11 +68,25 @@ export function ActiveSession() {
     }
   }, []);
 
+  // Keep the creep-test clock ticking (in real time) even while the operator
+  // switches to a different module tab — the timer state itself lives here,
+  // in the parent, rather than inside the module that gets unmounted.
+  useEffect(() => {
+    if (!creepTimer.running) return;
+    const timer = window.setInterval(() => forceTick((x) => x + 1), 500);
+    return () => window.clearInterval(timer);
+  }, [creepTimer.running]);
+
+  const creepElapsedMs =
+    creepTimer.accumulatedMs + (creepTimer.running && creepTimer.startedAt ? Date.now() - creepTimer.startedAt : 0);
+
   const persist = (
     nextIndex = moduleIndex,
     nextReadings = readings,
     nextObservations = observations,
-    nextDriftFlag = session.driftFlag
+    nextDriftFlag = session.driftFlag,
+    nextCreepReadings = creepReadings,
+    nextCreepTimer = creepTimer
   ) => {
     const next = {
       ...session,
@@ -72,6 +94,8 @@ export function ActiveSession() {
       readings: nextReadings,
       observations: nextObservations,
       driftFlag: nextDriftFlag,
+      creepReadings: nextCreepReadings,
+      creepTimer: nextCreepTimer,
       note,
     };
     localStorage.setItem('nawi-session', JSON.stringify(next));
@@ -79,6 +103,24 @@ export function ActiveSession() {
     setSession(next);
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1800);
+  };
+
+  const startCreepTimer = () => {
+    const next = { running: true, startedAt: Date.now(), accumulatedMs: creepTimer.accumulatedMs };
+    setCreepTimer(next);
+    persist(moduleIndex, readings, observations, session.driftFlag, creepReadings, next);
+  };
+
+  const stopCreepTimer = () => {
+    const next = { running: false, startedAt: null, accumulatedMs: creepElapsedMs };
+    setCreepTimer(next);
+    persist(moduleIndex, readings, observations, session.driftFlag, creepReadings, next);
+  };
+
+  const resetCreepTimer = () => {
+    const next = { running: false, startedAt: null, accumulatedMs: 0 };
+    setCreepTimer(next);
+    persist(moduleIndex, readings, observations, session.driftFlag, creepReadings, next);
   };
 
   const evaluateReading = () => {
@@ -102,16 +144,36 @@ export function ActiveSession() {
     return { result, observation };
   };
 
-  const addReading = async () => {
+  const addReading = async (opts = {}) => {
+    const { elapsedSeconds } = opts;
     if (!reading.trim() || Number.isNaN(Number(reading))) return;
     const evaluated = evaluateReading();
     const next = [...readings, reading.trim()];
-    const nextObservations = evaluated ? [...observations, evaluated.observation] : observations;
-    setReadings(next); setObservations(nextObservations); setReading(''); persist(moduleIndex, next, nextObservations);
+    const nextObservations = evaluated
+      ? [...observations, { ...evaluated.observation, elapsedSeconds }]
+      : observations;
+    let nextCreep = creepReadings;
+    if (typeof elapsedSeconds === 'number' && evaluated) {
+      nextCreep = [
+        ...creepReadings,
+        {
+          elapsedSeconds,
+          value: reading.trim(),
+          verdict: evaluated.result.verdict,
+          correctedError: evaluated.result.correctedError,
+        },
+      ];
+      setCreepReadings(nextCreep);
+    }
+    setReadings(next);
+    setObservations(nextObservations);
+    setReading('');
+    persist(moduleIndex, next, nextObservations, session.driftFlag, nextCreep, creepTimer);
     if (session.id && !String(session.id).startsWith('local-') && evaluated) {
       try {
         const moduleKey = ['identification','environment','zero','eccentricity','repeatability','linearity','creep','discrimination','verdict'][moduleIndex];
-        await api.addObservation(session.id, { module: moduleKey, logical_key: `${moduleKey}-${next.length}`, applied_load: String(appliedLoad || '0'), indication: String(evaluated.observation.indication), source });
+        const logicalKey = typeof elapsedSeconds === 'number' ? `${moduleKey}-${elapsedSeconds}s` : `${moduleKey}-${next.length}`;
+        await api.addObservation(session.id, { module: moduleKey, logical_key: logicalKey, applied_load: String(appliedLoad || '0'), indication: String(evaluated.observation.indication), source });
         setApiError('');
       } catch (err) { setApiError(err.message || 'Server sync failed; observation remains local.'); }
     }
@@ -249,12 +311,12 @@ export function ActiveSession() {
         <section className="panel min-h-[560px] overflow-hidden">
           <div className="flex items-center justify-between border-b border-[#d7e0db] px-5 py-4 md:px-7">
             <div>
-              <div className="eyebrow">Module {current.short} / 06</div>
+              <div className="eyebrow">Module {current.short} / {String(modules.length).padStart(2, '0')}</div>
               <h2 className="mt-1 text-xl font-semibold">{current.label}</h2>
             </div>
             <div className="font-mono text-xs text-[#7b9690]">
               {String(moduleIndex + 1).padStart(2, '0')}{' '}
-              <span className="text-[#c9d9d1]">/</span> 06
+              <span className="text-[#c9d9d1]">/</span> {String(modules.length).padStart(2, '0')}
             </div>
           </div>
 
@@ -282,6 +344,7 @@ export function ActiveSession() {
                 readings={readings}
                 onAdd={addReading}
                 unit={session.unit || 'g'}
+                sessionId={session.id}
               />
             )}
             {moduleIndex === 3 && (
@@ -310,11 +373,30 @@ export function ActiveSession() {
                 readings={readings}
                 onAdd={addReading}
                 unit={session.unit || 'g'}
+                sessionId={session.id}
               />
             )}
-            {moduleIndex === 5 && <ReadingModule title="Linearity" description="Capture indications across the selected load points and retain the authoritative server evaluation." value={reading} setValue={setReading} appliedLoad={appliedLoad} setAppliedLoad={setAppliedLoad} source={source} setSource={setSource} liveValidation={liveValidation} readings={readings} onAdd={addReading} unit={session.unit || 'g'} />}
-            {moduleIndex === 6 && <ReadingModule title="Creep" description="Capture the indication at the controlled creep observation point and preserve its timestamped result." value={reading} setValue={setReading} appliedLoad={appliedLoad} setAppliedLoad={setAppliedLoad} source={source} setSource={setSource} liveValidation={liveValidation} readings={readings} onAdd={addReading} unit={session.unit || 'g'} />}
-            {moduleIndex === 7 && <ReadingModule title="Discrimination" description="Capture the discrimination check reading and retain the result in the session record." value={reading} setValue={setReading} appliedLoad={appliedLoad} setAppliedLoad={setAppliedLoad} source={source} setSource={setSource} liveValidation={liveValidation} readings={readings} onAdd={addReading} unit={session.unit || 'g'} />}
+            {moduleIndex === 5 && <ReadingModule title="Linearity" description="Capture indications across the selected load points and retain the authoritative server evaluation." value={reading} setValue={setReading} appliedLoad={appliedLoad} setAppliedLoad={setAppliedLoad} source={source} setSource={setSource} liveValidation={liveValidation} readings={readings} onAdd={addReading} unit={session.unit || 'g'} sessionId={session.id} />}
+            {moduleIndex === 6 && (
+              <CreepModule
+                value={reading}
+                setValue={setReading}
+                appliedLoad={appliedLoad}
+                setAppliedLoad={setAppliedLoad}
+                source={source}
+                setSource={setSource}
+                liveValidation={liveValidation}
+                unit={session.unit || 'g'}
+                creepReadings={creepReadings}
+                elapsedMs={creepElapsedMs}
+                running={creepTimer.running}
+                onStart={startCreepTimer}
+                onStop={stopCreepTimer}
+                onReset={resetCreepTimer}
+                onCapture={(elapsedSeconds) => addReading({ elapsedSeconds })}
+              />
+            )}
+            {moduleIndex === 7 && <ReadingModule title="Discrimination" description="Capture the discrimination check reading and retain the result in the session record." value={reading} setValue={setReading} appliedLoad={appliedLoad} setAppliedLoad={setAppliedLoad} source={source} setSource={setSource} liveValidation={liveValidation} readings={readings} onAdd={addReading} unit={session.unit || 'g'} sessionId={session.id} />}
             {moduleIndex === 8 && (
               <VerdictModule
                 readings={readings}

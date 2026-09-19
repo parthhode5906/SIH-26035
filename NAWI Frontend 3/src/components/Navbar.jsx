@@ -13,21 +13,48 @@ import {
 } from 'lucide-react';
 import logoImg from '@/assets/logo.png';
 import { clearTokens } from '@/api/client';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { AUDIT_ROLES, REGISTRY_ROLES, hasRole } from '@/lib/roles';
 
-const navItems = [
+const baseNavItems = [
   { href: '/dashboard', label: 'Overview', icon: BarChart3 },
   { href: '/evaluations/new', label: 'New evaluation', icon: Plus },
   { href: '/sessions/active', label: 'Active session', icon: Activity },
   { href: '/reports', label: 'Report archive', icon: Archive },
-  { href: '/instruments', label: 'Instrument registry', icon: ShieldCheck },
   { href: '/about', label: 'About NAWI', icon: Info },
 ];
 
+const registryNavItem = { href: '/instruments', label: 'Instrument registry', icon: ShieldCheck };
+
+function initialsFor(nameOrEmail) {
+  if (!nameOrEmail) return '—';
+  const base = nameOrEmail.includes('@') ? nameOrEmail.split('@')[0] : nameOrEmail;
+  const parts = base.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '—';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 export function Navbar({ mobileOpen, onCloseMobile, onOpenHelp }) {
   const [location] = useLocation();
+  const user = useCurrentUser();
+  const localMode = localStorage.getItem('nawi-local-mode') === '1';
+
+  const displayName = user?.name || user?.email || (localMode ? 'Local mode' : 'Signed out');
+  const displayRole = user?.role
+    ? user.role.charAt(0).toUpperCase() + user.role.slice(1)
+    : localMode
+    ? 'Offline draft only'
+    : '—';
+  const canSeeAudit = hasRole(user, AUDIT_ROLES);
+  const canSeeRegistry = hasRole(user, REGISTRY_ROLES);
+  const navItems = canSeeRegistry
+    ? [...baseNavItems.slice(0, 3), registryNavItem, ...baseNavItems.slice(3)]
+    : baseNavItems;
 
   const handleLogout = () => {
     clearTokens();
+    localStorage.removeItem('nawi-local-mode');
     window.location.href = '/login';
   };
 
@@ -93,15 +120,17 @@ export function Navbar({ mobileOpen, onCloseMobile, onOpenHelp }) {
             Reference
           </div>
           <div className="space-y-1">
-            <Link
-              href="/admin"
-              onClick={onCloseMobile}
-              className="nav-item flex items-center gap-3 rounded-md px-3 py-3 text-sm"
-              data-testid="link-public-verification"
-            >
-              <ShieldCheck size={16} strokeWidth={1.7} />
-              <span>Audit & governance</span>
-            </Link>
+            {canSeeAudit && (
+              <Link
+                href="/admin"
+                onClick={onCloseMobile}
+                className="nav-item flex items-center gap-3 rounded-md px-3 py-3 text-sm"
+                data-testid="link-audit-governance"
+              >
+                <ShieldCheck size={16} strokeWidth={1.7} />
+                <span>Audit & governance</span>
+              </Link>
+            )}
             <Link href="/verify/NR-2026-0047" onClick={onCloseMobile} className="nav-item flex items-center gap-3 rounded-md px-3 py-3 text-sm"><ShieldCheck size={16} strokeWidth={1.7}/><span>Public verification</span></Link>
             <button
               onClick={() => {
@@ -125,11 +154,15 @@ export function Navbar({ mobileOpen, onCloseMobile, onOpenHelp }) {
           </div>
           <div className="flex items-center gap-3 rounded-md bg-white/5 p-3">
             <div className="grid h-8 w-8 place-items-center rounded-full bg-[#dceee8] text-xs font-semibold text-[#17333c]">
-              ML
+              {initialsFor(displayName)}
             </div>
             <div className="min-w-0">
-              <div className="truncate text-xs font-semibold text-[#eff5ee]">Maya Linden</div>
-              <div className="truncate text-[10px] text-[#87a39c]">Lab technician</div>
+              <div className="truncate text-xs font-semibold text-[#eff5ee]" data-testid="text-current-user">
+                {displayName}
+              </div>
+              <div className="truncate text-[10px] text-[#87a39c]" data-testid="text-current-role">
+                {displayRole}
+              </div>
             </div>
             <button
               onClick={handleLogout}

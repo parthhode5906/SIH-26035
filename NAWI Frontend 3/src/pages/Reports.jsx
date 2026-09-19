@@ -10,7 +10,17 @@ export function Reports() {
   const [query, setQuery] = useState('');
 
   const [reports, setReports] = useState([]);
-  useEffect(() => { api.reports().then(setReports).catch(() => {}); }, []);
+  const [lastSync, setLastSync] = useState(null);
+  const [loadError, setLoadError] = useState(false);
+  useEffect(() => {
+    api
+      .reports()
+      .then((data) => {
+        setReports(data);
+        setLastSync(new Date());
+      })
+      .catch(() => setLoadError(true));
+  }, []);
 
   const filtered = reports.filter((report) =>
     `${report.report_id} ${report.instrument?.asset || report.instrument || 'Instrument'} ${report.instrument?.serial || report.serial || '—'}`.toLowerCase().includes(query.toLowerCase())
@@ -120,7 +130,11 @@ export function Reports() {
       <div className="mt-5 flex flex-wrap items-center gap-4 text-[10px] text-[#7b9690]">
         <span className="flex items-center gap-2">
           <UploadCloud size={13} />
-          Last local sync: today, 09:38
+          {loadError
+            ? 'Could not reach the report archive'
+            : lastSync
+            ? `Last synced: ${lastSync.toLocaleTimeString()}`
+            : 'Syncing…'}
         </span>
         <span className="flex items-center gap-2">
           <LockKeyhole size={13} />

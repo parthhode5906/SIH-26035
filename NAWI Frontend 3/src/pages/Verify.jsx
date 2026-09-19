@@ -16,9 +16,10 @@ import {
 } from 'lucide-react';
 import ReportDocument from '@/components/reports/ReportDocument';
 import Button from '@/components/Button';
-import { downloadReportCopy, sha256 } from '@/lib/reportGenerator';
+import { sha256 } from '@/lib/reportGenerator';
 import logoImg from '@/assets/logo.png';
 import { api, downloadReport } from '@/api/client';
+import QRCode from 'qrcode';
 
 function VerifyField({ label, value, mono }) {
   return (
@@ -31,62 +32,81 @@ function VerifyField({ label, value, mono }) {
   );
 }
 
+const PENDING = 'Verifying…';
+
 export function Verify({ id }) {
   const reportId = id || 'NR-2026-0047';
-  const [reportHash, setReportHash] = useState('7E4A…91C2');
+  const [reportHash, setReportHash] = useState(PENDING);
   const [metadata, setMetadata] = useState({
-    signer: 'Dr. Elias Voss',
-    designation: 'Approving Officer',
-    sealedAt: '2026-02-14T16:08:32.000Z',
+    signer: '',
+    designation: '',
+    sealedAt: '',
     signatureHash: '',
   });
-  const [signatureName, setSignatureName] = useState('Dr. Elias Voss');
-  const [designation, setDesignation] = useState('Approving Officer');
+  const [signatureName, setSignatureName] = useState('');
+  const [designation, setDesignation] = useState('');
   const [geoState, setGeoState] = useState('Not captured');
   const [verified, setVerified] = useState(null);
   const [verifyError, setVerifyError] = useState('');
+  const [loading, setLoading] = useState(true);
 
+  // Local, unsealed geotag/signature drafts a technician may have started on
+  // this device before an officer's real seal comes back from the server.
   useEffect(() => {
-    const payload = JSON.stringify({
-      reportId,
-      instrument: 'Mettler Toledo MS6002S',
-      result: 'PASS',
-      standard: 'OIML R-76',
-    });
-
-    void sha256(payload).then((hash) => {
-      setReportHash(hash);
-      try {
-        const stored = localStorage.getItem(`nawi-report-${reportId}`);
-        const parsed = stored ? JSON.parse(stored) : null;
-        if (parsed) {
-          setMetadata(parsed);
-          setSignatureName(parsed.signer);
-          setDesignation(parsed.designation);
-          setGeoState(parsed.geotag ? 'Captured' : 'Not captured');
-          return;
-        }
-      } catch {
-        // Use deterministic hash below
-      }
-
-      void sha256(`${reportId}|${hash}|Dr. Elias Voss|Approving Officer|2026-02-14T16:08:32.000Z`).then(
-        (signatureHash) => {
-          setMetadata((current) => ({ ...current, signatureHash }));
-        }
-      );
-    });
+    try {
+      const stored = localStorage.getItem(`nawi-report-${reportId}`);
+      const parsed = stored ? JSON.parse(stored) : null;
+      if (parsed?.geotag) setGeoState('Captured');
+    } catch {
+      // no local draft — fine, the server response below is authoritative anyway
+    }
   }, [reportId]);
 
-  useEffect(() => { api.verify(reportId).then((data) => { setVerified(data); setReportHash(data.sha256); setMetadata((m)=>({...m, signer:data.signer||m.signer, designation:data.designation||m.designation, sealedAt:data.signed_at||m.sealedAt})); }).catch((err)=>setVerifyError(err.message)); }, [reportId]);
+  useEffect(() => {
+    setLoading(true);
+    api
+      .verify(reportId)
+      .then((data) => {
+        setVerified(data);
+        setReportHash(data.sha256 || 'Not available');
+        setMetadata((m) => ({
+          ...m,
+          signer: data.signer || '',
+          designation: data.designation || '',
+          sealedAt: data.signed_at || '',
+          signatureHash: data.signature_hash || m.signatureHash,
+        }));
+        setSignatureName(data.signer || '');
+        setDesignation(data.designation || '');
+      })
+      .catch((err) => {
+        setVerifyError(err.message);
+        setReportHash('Not available');
+      })
+      .finally(() => setLoading(false));
+  }, [reportId]);
 
-  const qrSeed = reportHash.replaceAll('…', 'A');
-  const darkCells = new Set(
-    Array.from({ length: 49 }, (_, index) => {
-      const char = qrSeed[index % qrSeed.length] ?? '0';
-      return (parseInt(char, 16) + index * 3) % 5 < 2 ? index : -1;
-    }).filter((index) => index >= 0)
-  );
+  // A real, scannable QR code encoding this report's public verification
+  // URL — previously this was a decorative grid derived from the hash.
+  const verifyUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/verify/${reportId}`
+      : `https://nawi.local/verify/${reportId}`;
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    QRCode.toDataURL(verifyUrl, { margin: 1, width: 240, color: { dark: '#17333c', light: '#ffffff' } })
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [verifyUrl]);
 
   const captureGeotag = () => {
     if (!navigator.geolocation) {
@@ -172,25 +192,70 @@ export function Verify({ id }) {
             </div>
 
             <div className="panel mt-8 overflow-hidden">
-              <div className="flex items-center gap-4 border-b border-[#d7e0db] bg-[#eaf4ef] px-5 py-5">
-                <div className="grid h-12 w-12 place-items-center rounded-full bg-[#2e7568] text-[#f4f7f3]">
-                  <CheckCircle2 size={27} />
-                </div>
-                <div>
-                  <div className="font-mono text-xl font-bold text-[#2e7568]">PASS</div>
-                  <div className="mt-1 text-xs text-[#58746f]">
-                    Evaluation meets applicable requirements
+              {(() => {
+                const result = verified?.result || verified?.verdict || verified?.overall_verdict;
+                const isPass = result === 'PASS';
+                const isFail = result === 'FAIL';
+                return (
+                  <div
+                    className={`flex items-center gap-4 border-b border-[#d7e0db] px-5 py-5 ${
+                      isPass ? 'bg-[#eaf4ef]' : isFail ? 'bg-[#fdeceb]' : 'bg-[#f4f7f3]'
+                    }`}
+                  >
+                    <div
+                      className={`grid h-12 w-12 place-items-center rounded-full text-[#f4f7f3] ${
+                        isPass ? 'bg-[#2e7568]' : isFail ? 'bg-[#b24b43]' : 'bg-[#7b9690]'
+                      }`}
+                    >
+                      <CheckCircle2 size={27} />
+                    </div>
+                    <div>
+                      <div
+                        className={`font-mono text-xl font-bold ${
+                          isPass ? 'text-[#2e7568]' : isFail ? 'text-[#b24b43]' : 'text-[#58746f]'
+                        }`}
+                      >
+                        {loading ? PENDING : result || 'Not reported'}
+                      </div>
+                      <div className="mt-1 text-xs text-[#58746f]">
+                        {loading
+                          ? 'Contacting the verification service…'
+                          : verifyError
+                          ? verifyError
+                          : isPass
+                          ? 'Evaluation meets applicable requirements'
+                          : isFail
+                          ? 'Evaluation did not meet applicable requirements'
+                          : 'Result not reported by the server'}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                );
+              })()}
 
               <div className="grid gap-x-8 gap-y-6 p-5 sm:grid-cols-2 md:p-7">
-                <VerifyField label="Instrument" value="Mettler Toledo MS6002S" />
-                <VerifyField label="Serial number" value="B723814" mono />
-                <VerifyField label="Standard" value="OIML R-76-2:2007" />
-                <VerifyField label="Evaluation date" value="14 February 2026" />
-                <VerifyField label="Approving officer" value={metadata.signer} />
-                <VerifyField label="Facility" value="NAWI Metrology · Facility 07" />
+                <VerifyField
+                  label="Instrument"
+                  value={loading ? PENDING : verified?.instrument?.asset || verified?.instrument || 'Not available'}
+                />
+                <VerifyField
+                  label="Serial number"
+                  value={loading ? PENDING : verified?.instrument?.serial || verified?.serial || 'Not available'}
+                  mono
+                />
+                <VerifyField label="Standard" value={verified?.standard || 'OIML R 76-2:2007'} />
+                <VerifyField
+                  label="Evaluation date"
+                  value={
+                    loading
+                      ? PENDING
+                      : verified?.evaluated_at
+                      ? new Date(verified.evaluated_at).toLocaleDateString()
+                      : 'Not available'
+                  }
+                />
+                <VerifyField label="Approving officer" value={metadata.signer || 'Not yet signed'} />
+                <VerifyField label="Facility" value={verified?.facility || 'Not reported'} />
               </div>
             </div>
 
@@ -218,20 +283,20 @@ export function Verify({ id }) {
           <aside className="space-y-5">
             <div className="panel p-5">
               <div className="eyebrow">Verification key</div>
-              <div className="mt-5 grid aspect-square place-items-center rounded-lg border border-[#c9d9d1] bg-white">
-                <div className="grid grid-cols-7 gap-1 opacity-80">
-                  {Array.from({ length: 49 }).map((_, index) => (
-                    <span
-                      key={index}
-                      className={`h-3 w-3 ${
-                        darkCells.has(index) ? 'bg-[#17333c]' : 'bg-[#edf3ee]'
-                      }`}
-                    />
-                  ))}
-                </div>
+              <div className="mt-5 grid aspect-square place-items-center rounded-lg border border-[#c9d9d1] bg-white p-4">
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt={`QR code linking to the verification page for report ${reportId}`}
+                    className="h-full w-full object-contain"
+                    data-testid="image-verify-qr"
+                  />
+                ) : (
+                  <div className="text-[10px] text-[#9ab0a9]">Generating QR code…</div>
+                )}
               </div>
               <div className="mt-4 break-all text-center font-mono text-[10px] text-[#66837d]">
-                nawi.local/verify/{reportId}
+                {verifyUrl.replace(/^https?:\/\//, '')}
               </div>
             </div>
 
@@ -315,11 +380,11 @@ export function Verify({ id }) {
           <div className="mt-4 grid gap-3 border-t border-[#d7e0db] pt-4 text-[10px] text-[#66837d] sm:grid-cols-3">
             <span className="flex items-center gap-2">
               <Clock3 size={13} />
-              Sealed: <strong className="font-mono text-[#33545a]">{new Date(metadata.sealedAt).toLocaleString()}</strong>
+              Sealed: <strong className="font-mono text-[#33545a]">{metadata.sealedAt ? new Date(metadata.sealedAt).toLocaleString() : 'Not yet sealed'}</strong>
             </span>
             <span className="flex items-center gap-2">
               <FileSignature size={13} />
-              Signature: <strong className="font-mono text-[#33545a]">{metadata.signatureHash.slice(0, 16)}…</strong>
+              Signature: <strong className="font-mono text-[#33545a]">{metadata.signatureHash ? `${metadata.signatureHash.slice(0, 16)}…` : 'Not yet signed'}</strong>
             </span>
             <span className="flex items-center gap-2">
               <Globe2 size={13} />

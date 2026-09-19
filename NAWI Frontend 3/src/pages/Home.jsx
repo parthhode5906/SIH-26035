@@ -15,6 +15,15 @@ import Button from '@/components/Button';
 import { loadWorkingSession } from '@/lib/offlineStore';
 import { api } from '@/api/client';
 
+function formatAuditTime(value) {
+  if (!value) return '—';
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return String(value);
+  }
+}
+
 function ActivityRow({ event, reference, operator, time, status }) {
   return (
     <tr className="table-row border-b border-[#e5ece8] last:border-0">
@@ -36,6 +45,10 @@ export function Home() {
   const [session, setSession] = useState(null);
   const [serverSessions, setServerSessions] = useState([]);
   const [reportsCount, setReportsCount] = useState(0);
+  const [environment, setEnvironment] = useState(null);
+  const [environmentError, setEnvironmentError] = useState(false);
+  const [activity, setActivity] = useState([]);
+  const [activityError, setActivityError] = useState(false);
 
   useEffect(() => {
     try {
@@ -51,7 +64,26 @@ export function Home() {
     });
     api.sessions().then(setServerSessions).catch(() => {});
     api.reports().then((r) => setReportsCount(r.length)).catch(() => {});
+    // Real audit feed — replaces the old hardcoded demo rows.
+    api
+      .audit()
+      .then((rows) => setActivity(rows.slice(0, 5)))
+      .catch(() => setActivityError(true));
   }, []);
+
+  // Live environment/drift reading for whichever session is actually open on
+  // the server — no fabricated temperature/humidity numbers.
+  useEffect(() => {
+    const liveSessionId = session?.id && !String(session.id).startsWith('local-') ? session.id : null;
+    if (!liveSessionId) {
+      setEnvironment(null);
+      return;
+    }
+    api
+      .drift(liveSessionId)
+      .then(setEnvironment)
+      .catch(() => setEnvironmentError(true));
+  }, [session?.id]);
 
   return (
     <div>
@@ -74,8 +106,16 @@ export function Home() {
         <div className="animate-rise">
           <StatCard
             label="Open sessions"
-            value={session ? '01' : '00'}
-            detail={session ? 'Bench 02 · in progress' : 'No active evaluations'}
+            value={String(
+              serverSessions.filter((s) => s.state !== 'completed' && s.state !== 'approved').length
+            ).padStart(2, '0')}
+            detail={
+              serverSessions.length
+                ? 'From server session records'
+                : session
+                ? 'Local draft not yet synced'
+                : 'No active evaluations'
+            }
             icon={Activity}
             tone="teal"
           />
@@ -100,8 +140,14 @@ export function Home() {
         <div className="animate-rise animate-delay-3">
           <StatCard
             label="Environment"
-            value="Stable"
-            detail="21.4°C · 43% RH"
+            value={environment?.status ? environment.status : environment === null ? 'No session' : '—'}
+            detail={
+              environment
+                ? `${environment.temperature ?? '—'}°C · ${environment.humidity ?? '—'}% RH`
+                : environmentError
+                ? 'Drift check unavailable'
+                : 'Open a synced session to read live sensor data'
+            }
             icon={Thermometer}
           />
         </div>
@@ -181,24 +227,42 @@ export function Home() {
             <div className="eyebrow !text-[#c8a96b]">Bench health</div>
             <Activity size={16} className="text-[#9ec8bb]" />
           </div>
-          <div className="mt-8 flex items-center gap-5">
-            <div className="gauge-ring grid h-28 w-28 shrink-0 place-items-center">
-              <div className="text-center">
-                <div className="font-mono text-2xl text-[#f3e8d0]">OK</div>
-                <div className="mt-1 text-[9px] uppercase tracking-[.14em] text-[#9ec8bb]">stable</div>
+          {environment ? (
+            <>
+              <div className="mt-8 flex items-center gap-5">
+                <div className="gauge-ring grid h-28 w-28 shrink-0 place-items-center">
+                  <div className="text-center">
+                    <div className="font-mono text-2xl text-[#f3e8d0]">
+                      {environment.status || (environment.drift_flag ? 'DRIFT' : 'OK')}
+                    </div>
+                    <div className="mt-1 text-[9px] uppercase tracking-[.14em] text-[#9ec8bb]">
+                      {environment.drift_flag ? 'flagged' : 'stable'}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div className="font-mono text-xl">{environment.temperature ?? '—'}°C</div>
+                  <div className="mt-1 text-xs text-[#a5c0b8]">
+                    {environment.temperature_range || 'range not reported'}
+                  </div>
+                  <div className="mt-4 font-mono text-xl">{environment.humidity ?? '—'}% RH</div>
+                  <div className="mt-1 text-xs text-[#a5c0b8]">
+                    {environment.humidity_range || 'range not reported'}
+                  </div>
+                </div>
               </div>
+              <div className="mt-8 border-t border-white/10 pt-4 text-xs text-[#a5c0b8]">
+                <span className="status-dot mr-2" />
+                Last checked {formatAuditTime(environment.checked_at || environment.updated_at)}
+              </div>
+            </>
+          ) : (
+            <div className="mt-8 rounded-lg border border-dashed border-white/15 p-6 text-center text-xs text-[#a5c0b8]">
+              {environmentError
+                ? 'Could not reach the drift endpoint for this session.'
+                : 'No synced session is open, so there is no live sensor reading to show.'}
             </div>
-            <div>
-              <div className="font-mono text-xl">21.4°C</div>
-              <div className="mt-1 text-xs text-[#a5c0b8]">within 20–23°C</div>
-              <div className="mt-4 font-mono text-xl">43% RH</div>
-              <div className="mt-1 text-xs text-[#a5c0b8]">within 35–60% RH</div>
-            </div>
-          </div>
-          <div className="mt-8 border-t border-white/10 pt-4 text-xs text-[#a5c0b8]">
-            <span className="status-dot mr-2" />
-            Last sensor check 09:38:22
-          </div>
+          )}
         </section>
       </div>
 
@@ -228,27 +292,23 @@ export function Home() {
               </tr>
             </thead>
             <tbody>
-              <ActivityRow
-                event="Report sealed"
-                reference="NR-2026-0047"
-                operator="Maya Linden"
-                time="Yesterday, 16:08"
-                status="Verified"
-              />
-              <ActivityRow
-                event="Evaluation completed"
-                reference="EVAL-2026-031"
-                operator="Jon Bell"
-                time="Yesterday, 14:22"
-                status="Pass"
-              />
-              <ActivityRow
-                event="Calibration file imported"
-                reference="CAL-7721"
-                operator="System"
-                time="Mon, 11:04"
-                status="Stored locally"
-              />
+              {activity.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-8 text-center text-xs text-[#7b9690]">
+                    {activityError ? 'Audit log unavailable.' : 'No audit events yet.'}
+                  </td>
+                </tr>
+              )}
+              {activity.map((row) => (
+                <ActivityRow
+                  key={row.id || `${row.action}-${row.created_at}`}
+                  event={row.action || '—'}
+                  reference={row.object_id ? String(row.object_id).slice(0, 12) : '—'}
+                  operator={row.actor_email || row.actor || row.user || 'System'}
+                  time={formatAuditTime(row.created_at)}
+                  status={row.detail || '—'}
+                />
+              ))}
             </tbody>
           </table>
         </div>

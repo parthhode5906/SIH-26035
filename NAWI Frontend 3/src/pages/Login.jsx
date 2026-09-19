@@ -6,8 +6,8 @@ import { api, setTokens } from '@/api/client';
 
 export function Login() {
   const [signingIn, setSigningIn] = useState(false);
-  const [email, setEmail] = useState('tech@lab.gov.in');
-  const [password, setPassword] = useState('demo-password-2026');
+  const [email, setEmail] = useState('technician@nawi.local');
+  const [password, setPassword] = useState('nawi-demo');
   const [error, setError] = useState('');
 
   const continueLocally = () => {
