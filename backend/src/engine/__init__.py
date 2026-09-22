@@ -47,10 +47,16 @@ from .mpe_rules import (
     mpe_for_load,
     quantize_to_d,
 )
+from .mpe_rules import EvaluationMode as _EvaluationMode
+
+#: Re-exported for the API/service layers (D-19: the mode is always an
+#: explicit parameter; importing it from the engine keeps one source).
+EvaluationMode = _EvaluationMode
 
 __all__ = [
     "AccuracyClass",
     "EngineValueError",
+    "EvaluationMode",
     "EvaluationResult",
     "Observation",
     "PrecisionError",

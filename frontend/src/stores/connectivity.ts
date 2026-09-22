@@ -10,7 +10,7 @@ interface ConnectivityState {
   recheck: () => Promise<void>
 }
 
-const BASE: string = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000'
+const BASE: string = import.meta.env.VITE_API_BASE ?? ''
 
 export const useConnectivity = create<ConnectivityState>((set) => ({
   online: navigator.onLine,

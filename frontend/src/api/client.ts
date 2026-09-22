@@ -1,10 +1,12 @@
 /**
  * Backend API client (P3-1/P3-2). All metrology values travel as strings
- * (INV-4). The base URL is configurable via VITE_API_BASE.
+ * (INV-4). Same-origin by default: Vite proxies /api and /health to the
+ * backend (no CORS, no localhost address-family ambiguity). Deployments
+ * without the proxy set VITE_API_BASE to the API origin explicitly.
  */
 import { useAuthStore } from '@/stores/auth'
 
-const BASE: string = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000'
+const BASE: string = import.meta.env.VITE_API_BASE ?? ''
 
 export class ApiError extends Error {
   status: number
@@ -73,12 +75,30 @@ export interface SessionDto {
   id: string
   instrument_id: string
   status: string
+  /** MPE regime pinned at creation (R 76-1 §3.5): 1× or 2× Table 6. */
+  evaluation_mode: 'initial_verification' | 'in_service'
   start_temp_c: string | null
   end_temp_c: string | null
   humidity_pct: string | null
   pressure_hpa: string | null
   started_at: string | null
   completed_at: string | null
+}
+
+export interface ChecklistItemOut {
+  id: string
+  clause: string
+  item_key: string
+  requirement: string
+  test_procedure: string
+  outcome: 'PASSED' | 'FAILED' | 'UNCHECKED' | 'NA'
+  remarks: string | null
+  revision_no: number
+}
+
+export interface ChecklistOut {
+  items: ChecklistItemOut[]
+  progress: { passed: number; failed: number; open: number; total: number }
 }
 
 export interface ObservationDto {
@@ -144,6 +164,24 @@ export const api = {
 
   finalizeSession: (id: string) =>
     request<SessionDto>(`/api/v1/sessions/${id}/finalize`, { method: 'POST' }),
+
+  seedChecklist: (sessionId: string) =>
+    request<{ created: number }>(
+      `/api/v1/sessions/${sessionId}/checklist/seed`,
+      { method: 'POST' },
+    ),
+
+  getChecklist: (sessionId: string) =>
+    request<ChecklistOut>(`/api/v1/sessions/${sessionId}/checklist`),
+
+  updateChecklistItem: (
+    sessionId: string,
+    body: { clause: string; item_key: string; outcome: 'PASSED' | 'FAILED' | 'UNCHECKED' | 'NA'; remarks?: string | null },
+  ) =>
+    request<ChecklistItemOut>(
+      `/api/v1/sessions/${sessionId}/checklist/items`,
+      { method: 'PUT', body: JSON.stringify(body) },
+    ),
 
   syncBatch: (sessionId: string, items: Record<string, unknown>[]) =>
     request<{ accepted: string[]; rejected: { index: string; reason: string }[] }>(

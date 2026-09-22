@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
 
-from .routers import attachments, auth, instruments, reports, sessions
+from .routers import attachments, auth, instruments, reports, sessions, checklist
 
 app = FastAPI(
     title="OIML R-76 Compliance Engine API",
@@ -38,6 +38,7 @@ app.include_router(auth.users_router, prefix="/api/v1")
 app.include_router(instruments.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(attachments.router, prefix="/api/v1")
+app.include_router(checklist.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
 app.include_router(reports.public_router, prefix="/api/v1")
 

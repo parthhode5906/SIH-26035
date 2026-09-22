@@ -29,6 +29,7 @@ export function DashboardPage() {
           id,
           instrument_id: s.instrument_id,
           status: s.status,
+          evaluation_mode: s.evaluation_mode ?? 'initial_verification',
           start_temp_c: s.start_temp_c ?? null,
           end_temp_c: s.end_temp_c ?? null,
           humidity_pct: s.humidity_pct ?? null,

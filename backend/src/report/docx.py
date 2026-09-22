@@ -98,6 +98,26 @@ def render_docx(data: ReportData, *, verify_base_url: str, sha256: str, report_i
         doc.add_heading(f"5.{i} · {test_title(test_type)} — {len(rows)} reading(s), {fails} failed", level=2)
         _obs_table(doc, rows)
 
+    if data.checklist:
+        doc.add_heading("5.C · Checklist (R 76-2 sheet 17)", level=1)
+        tbl = doc.add_table(rows=1, cols=5)
+        tbl.style = "Table Grid"
+        hdr = tbl.rows[0].cells
+        for c, t in zip(hdr, ("Clause", "Requirement", "Procedure", "Outcome", "Remarks")):
+            c.text = t
+        for item in data.checklist:
+            cells = tbl.add_row().cells
+            cells[0].text = item["clause"]
+            cells[1].text = item["requirement"]
+            cells[2].text = item["test_procedure"]
+            cells[3].text = item["outcome"]
+            cells[4].text = item["remarks"]
+        prog = data.checklist_progress
+        doc.add_paragraph(
+            f"Checklist: {prog.get('passed', 0)} passed, {prog.get('failed', 0)} failed, "
+            f"{prog.get('open', 0)} open, {prog.get('total', 0)} items."
+        )
+
     doc.add_heading("6 · Result summary", level=1)
     _kv_table(
         doc,

@@ -42,7 +42,7 @@
 
 **Goal:** FastAPI service with PostgreSQL persistence, auth, and the canonical evaluate-observation endpoint.
 
-- [x] P2-1 · SQLAlchemy models + Alembic migrations for all five tables (architecture.md §4) *(models + create_all done; Alembic chain deferred to P7 hardening — tracked in parking lot)*
+- [x] P2-1 · SQLAlchemy models + Alembic migrations for all five tables (architecture.md §4) *(models + create_all done; Alembic chain landed 2026-09-17 — `backend/alembic/` with initial migration `0be1fd7c286d`, upgrade/downgrade cycle verified; parking lot cleared, see memory.md §7/D-34)*
 - [x] P2-2 · Auth: JWT login, refresh, bcrypt hashing; `users` seeding script; RBAC dependency *(bcrypt used directly — passlib unmaintained)*
 - [x] P2-3 · Instruments CRUD + class-rule validation on create *(422 with auditor-readable Table 3 reason)*
 - [x] P2-4 · Sessions lifecycle (draft → in_progress → completed → approved) + env fields
@@ -87,6 +87,9 @@
 - [x] P4-7 · Environmental module + watchdog banner states (design.md §5.4) *(green/amber from GET /drift; red state pending Phase 5 thresholds)*
 - [x] P4-8 · Zero-tracking/zero check module *(10e break-out load — §A.4.2.3.2)*
 - [x] P4-9 · Module completion gating → Finalize button logic *(progress bar, ✓/● tab states, Finalize tooltip lists incomplete modules)*
+- [x] P4-11 · **Full R 76-2 coverage (P4c, 2026-09-24):** all 17 official tests instrumented. Grid modules for sensitivity (A.4.9), stability of equilibrium (A.4.12, fixed 1e), tilting (3.9.1: 2e no-load / band loaded), warm-up (A.5.2), span stability (B.4), endurance (A.6), EMC disturbances (B.3.x, deviation ≤ e). **Test 17 checklist** as a first-class subsystem: engine catalog (38 condensed rows from R 76-2 sheets 50-55), checklist_items table (Alembic 63a3c54cedbc, append-only supersession), seed/read/update API with RBAC + audit, dedicated workspace tab with per-item PASSED/FAILED/NA dropdowns, and a sheet-17 section in the PDF + DOCX reports. ⚠ human gate: catalog row texts are condensed, not verbatim — a metrologist must check full-sheet coverage before production claims.
+
+- [x] P4-10 · **Influence-factor modules (P4b, 2026-09-24):** temperature on no-load (fixed 1e limit — §3.9.2.3/A.5.3.2), discrimination digital (I₂ input, I₂−I₁ ≥ d, d ≥ 5 mg — §3.8.2.2/A.4.8.2), damp heat steady state (Annex B.2, ≥5 loads, class-band MPE), voltage variations (§3.9.3/A.5.4, 10e + Max loads, class-band MPE). Workspace now 10 modules; report TEST_ORDER follows the R 76-2 summary numbering; Alembic revision 950e9a084339 adds observations.second_indication.
 
 **Verification record (2026-09-15):** all constants extracted verbatim from `required rulebook/r076-1-e06.pdf` (pages 87–92, 30); 17 new vitest cases in `frontend/tests/phase4.test.ts` (33/33 total); eccentricity grid + creep timer + verdict flow verified live in the preview (position 1 FAIL → auto-advance to position 2, grid fill red).
 

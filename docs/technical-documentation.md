@@ -132,9 +132,15 @@ Notes:
 - **First-period errors** (type approval context): Table 6 values apply.
   **In-service** MPEs are **twice** these values (R 76-1 §3.5.2) — the
   engine carries this distinction for future verification workflows.
-- Class validity ranges (`n = Max/e`, Table 3): I: ≥ 50 000;
-  II: 100–100 000; III: 100–10 000; IIII: 10–1 000. Instrument creation
-  is rejected with an auditor-readable reason when Table 3 is violated.
+- Class validity (R 76-1 Table 3, verbatim 2026-09-17 re-extraction): rows
+  are keyed by accuracy class AND the permitted `e` range — I (e ≥ 0.001 g):
+  n ≥ 50 000; II (0.001 g ≤ e ≤ 0.05 g): 100–100 000, (0.1 g ≤ e):
+  5 000–100 000; III (0.1 g ≤ e ≤ 2 g): 100–10 000, (5 g ≤ e): **500**–10 000;
+  IIII (5 g ≤ e): **100**–1 000. An `e` between two rows (e.g. 2–5 g for
+  class III) is not permitted and is rejected. Minimum capacity per
+  §3.4.3 is expressed in **d** (actual scale interval): Min ≥ 100d (I),
+  20d (II fine/III), 50d (II coarse), 10d (IIII). Instrument creation is
+  rejected with an auditor-readable reason when Table 3 is violated.
 - MPEs apply for loads `Min ≤ L ≤ Max`; the engine refuses evaluations
   outside the measuring range.
 

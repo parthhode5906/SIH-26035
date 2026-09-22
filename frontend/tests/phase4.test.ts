@@ -32,20 +32,35 @@ const SCALE: ScaleParameters = {
 }
 
 describe('test-module requirements (rulebook-sourced)', () => {
-  it('covers all six workspace test types', () => {
+  it('covers all seventeen R 76-2 tests (P4c adds the long-duration/EMC set)', () => {
     expect(TEST_MODULES.map((m) => m.testType)).toEqual([
+      // Tests 1-6, 9, 6.1, 6.2:
       'weighing_performance',
       'eccentricity',
       'repeatability',
       'tare',
       'creep',
       'zero_check',
+      // P4b influence factors (2, 4.1, 11, B.2):
+      'temperature_no_load',
+      'discrimination',
+      'damp_heat',
+      'voltage_variations',
+      // P4c (4.2, 7, 8, 10, 12, 14, 15):
+      'sensitivity',
+      'equilibrium',
+      'tilting',
+      'warm_up',
+      'span_stability',
+      'endurance',
+      'emc_disturbances',
     ])
+    expect(TEST_MODULES.length).toBe(17) // checklist (17) is a separate tab
   })
 
   it('every module cites a clause and carries a hint', () => {
     for (const m of TEST_MODULES) {
-      expect(m.clause).toMatch(/^R 76-1 §/)
+      expect(m.clause).toMatch(/^R 76-1 (§|Annex )/)
       expect(m.hint.length).toBeGreaterThan(20)
     }
   })
@@ -126,6 +141,19 @@ describe('moduleStatus completion predicates', () => {
       ...Array.from({ length: 5 }, () => row('tare')),
       ...['1', '2', '3', '4'].map((p) => row('creep', p)),
       row('zero_check'),
+      // P4b influence-factor modules:
+      ...Array.from({ length: 2 }, () => row('temperature_no_load')),
+      ...Array.from({ length: 3 }, () => row('discrimination')),
+      ...Array.from({ length: 5 }, () => row('damp_heat')),
+      ...Array.from({ length: 2 }, () => row('voltage_variations')),
+      // P4c modules:
+      ...Array.from({ length: 2 }, () => row('sensitivity')),
+      row('equilibrium'),
+      ...Array.from({ length: 2 }, () => row('tilting')),
+      ...Array.from({ length: 4 }, () => row('warm_up')),
+      ...Array.from({ length: 2 }, () => row('span_stability')),
+      ...Array.from({ length: 2 }, () => row('endurance')),
+      row('emc_disturbances'),
     ]
     const allComplete = TEST_MODULES.every((m) => moduleStatus(m, rows, SCALE).complete)
     expect(allComplete).toBe(true)

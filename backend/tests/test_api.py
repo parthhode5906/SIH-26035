@@ -665,3 +665,432 @@ class TestLifecycle:
 def _unused(*args: Any) -> None:  # pragma: no cover
     """Keep typing imports referenced for linters without runtime use."""
     _ = args
+
+
+# ---------------------------------------------------------------------------
+# In-service MPE mode end-to-end (Section 3.5.2 - 2x limits, session-pinned)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def mode_instrument_id(tokens) -> str:
+    """Table-3-valid Class III instrument (coarse-e row: 5 g <= e), distinct
+    from other tests' fixtures: n = 15000/0.005 = 3000 >= 500, Min = 20*d."""
+    r = client.post(
+        "/api/v1/instruments",
+        headers=_auth(tokens["tech"]),
+        json={
+            "manufacturer": "Essae Digitronics",
+            "model": "DS-215",
+            "serial_number": "API-TST-MODE",
+            "accuracy_class": "III",
+            "max_capacity": "15",
+            "min_capacity": "0.1",
+            "verification_scale_interval": "0.005",
+            "display_interval": "0.001",
+            "base_unit": "kg",
+        },
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+@pytest.fixture(scope="module")
+def in_service_session_id(tokens, mode_instrument_id) -> str:
+    r = client.post(
+        "/api/v1/sessions",
+        headers=_auth(tokens["tech"]),
+        json={"instrument_id": mode_instrument_id, "evaluation_mode": "in_service"},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["evaluation_mode"] == "in_service"
+    return body["id"]
+
+
+class TestInServiceMode:
+    def test_default_is_initial_verification(self, tokens, mode_instrument_id) -> None:
+        r = client.post(
+            "/api/v1/sessions",
+            headers=_auth(tokens["tech"]),
+            json={"instrument_id": mode_instrument_id},
+        )
+        assert r.status_code == 201
+        assert r.json()["evaluation_mode"] == "initial_verification"
+
+    def test_invalid_mode_rejected(self, tokens, mode_instrument_id) -> None:
+        r = client.post(
+            "/api/v1/sessions",
+            headers=_auth(tokens["tech"]),
+            json={"instrument_id": mode_instrument_id, "evaluation_mode": "double"},
+        )
+        assert r.status_code == 422
+
+    def test_in_service_doubles_mpe(
+        self, tokens, in_service_session_id, session_id
+    ) -> None:
+        """Same reading into both modes: in-service MPE is exactly 2x and a
+        borderline reading (Ec = 1.3e) FAILS initial but PASSES in-service."""
+        obs = {
+            "test_type": "weighing_performance",
+            "sequence_no": 90,
+            "applied_load": "7.5",
+            "indication": "7.5065",
+        }
+        r_init = client.post(
+            f"/api/v1/sessions/{session_id}/observations",
+            headers=_auth(tokens["tech"]),
+            json=obs,
+        )
+        assert r_init.status_code == 201, r_init.text
+        init_eval = r_init.json()["evaluation"]
+
+        r_serv = client.post(
+            f"/api/v1/sessions/{in_service_session_id}/observations",
+            headers=_auth(tokens["tech"]),
+            json=obs,
+        )
+        assert r_serv.status_code == 201, r_serv.text
+        serv_eval = r_serv.json()["evaluation"]
+
+        from decimal import Decimal
+
+        assert Decimal(serv_eval["mpe_limit"]) == 2 * Decimal(init_eval["mpe_limit"])
+        # Ec = +0.0065 kg = 1.3e > 1.0e (initial MPE) but <= 2.0e (in service).
+        assert init_eval["verdict"] == "FAIL"
+        assert serv_eval["verdict"] == "PASS"
+
+
+
+# ---------------------------------------------------------------------------
+# Influence-factor modules (P4b): temperature no-load, damp heat, voltage,
+# discrimination - end-to-end over HTTP.
+# ---------------------------------------------------------------------------
+
+
+class TestInfluenceFactorModules:
+    def test_temperature_no_load_fixed_1e_limit(
+        self, tokens, session_id
+    ) -> None:
+        """Zero drift is judged against 1 e (3.9.2.3), NOT the 0.5 e band.
+
+        e = 5 g; dL = 0.001 -> E = +0.0025 - 0.001 = +0.0015... with
+        I = 0.006: E = 0.006 + 0.0025 - 0.001 = +0.0075 = 1.5e > 1e -> FAIL.
+        The asserted MPE limit is exactly 1 e = 5 g.
+        """
+        r = client.post(
+            f"/api/v1/sessions/{session_id}/observations",
+            headers=_auth(tokens["tech"]),
+            json={
+                "test_type": "temperature_no_load",
+                "sequence_no": 60,
+                "applied_load": "0",
+                "indication": "0.006",
+                "additional_load": "0.001",
+                "zero_error": "0",
+            },
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["evaluation"]["verdict"] == "FAIL"  # 7.5 g > 5 g
+        assert body["observation"]["mpe_limit"] == "0.005000"  # = 1 e
+
+    def test_temperature_no_load_pass_at_half_e(
+        self, tokens, session_id
+    ) -> None:
+        """A +2.5 g (0.5 e) zero drift passes the 1 e rule (3.9.2.3)."""
+        r = client.post(
+            f"/api/v1/sessions/{session_id}/observations",
+            headers=_auth(tokens["tech"]),
+            json={
+                "test_type": "temperature_no_load",
+                "sequence_no": 61,
+                "applied_load": "0",
+                "indication": "0",
+                "additional_load": "0.0025",
+                "zero_error": "0",
+            },
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["evaluation"]["verdict"] == "PASS"  # 0.5e <= 1e
+        assert body["observation"]["mpe_limit"] == "0.005000"
+
+    def test_temperature_row_rejects_nonzero_load(
+        self, tokens, session_id
+    ) -> None:
+        r = client.post(
+            f"/api/v1/sessions/{session_id}/observations",
+            headers=_auth(tokens["tech"]),
+            json={
+                "test_type": "temperature_no_load",
+                "sequence_no": 62,
+                "applied_load": "1",
+                "indication": "1",
+            },
+        )
+        assert r.status_code == 422
+        assert "no-load" in r.json()["detail"]
+
+    def test_damp_heat_and_voltage_use_standard_band(
+        self, tokens, session_id
+    ) -> None:
+        """B.2 / A.5.4: all indications within MPE - the class band path.
+
+        L = 5 kg = 1000e, I = 5.002 -> E = +0.0045 = 0.9e <= 1.0e -> PASS
+        under the (500, 2000] band. The 1 e no-load rule must NOT apply.
+        """
+        for tt, seq in (("damp_heat", 70), ("voltage_variations", 71)):
+            r = client.post(
+                f"/api/v1/sessions/{session_id}/observations",
+                headers=_auth(tokens["tech"]),
+                json={
+                    "test_type": tt,
+                    "sequence_no": seq,
+                    "applied_load": "5",
+                    "indication": "5.002",
+                    "zero_error": "0",
+                },
+            )
+            assert r.status_code == 201, r.text
+            body = r.json()
+            assert body["evaluation"]["verdict"] == "PASS"
+            # 1.0e band limit at 1000e; a 0.9e error would FAIL the 0.5e
+            # band, so a PASS proves the (500, 2000] band was applied.
+            assert body["observation"]["mpe_limit"] == "0.005000"
+
+    def test_discrimination_pass_and_persistence(
+        self, tokens, session_id
+    ) -> None:
+        """A.4.8.2: I1 = 5.000 (with 1/10 d extra), add 1.4 d = 1.4 g ->
+        I2 = 5.002; I2 - I1 = 2 g >= d = 1 g -> PASS."""
+        r = client.post(
+            f"/api/v1/sessions/{session_id}/observations",
+            headers=_auth(tokens["tech"]),
+            json={
+                "test_type": "discrimination",
+                "sequence_no": 80,
+                "applied_load": "5",
+                "indication": "5.000",
+                "additional_load": "0.001",
+                "second_indication": "5.002",
+            },
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["evaluation"]["verdict"] == "PASS"
+        assert body["observation"]["second_indication"] == "5.002000"
+        assert body["evaluation"]["corrected_error"] == "0.002000"
+        assert body["observation"]["mpe_limit"] == "0.001000"  # = d
+
+    def test_discrimination_fail_below_d(self, tokens, session_id) -> None:
+        """I2 rises by only 0.5 d: not an unambiguous shift."""
+        r = client.post(
+            f"/api/v1/sessions/{session_id}/observations",
+            headers=_auth(tokens["tech"]),
+            json={
+                "test_type": "discrimination",
+                "sequence_no": 81,
+                "applied_load": "5",
+                "indication": "5.000",
+                "additional_load": "0.0005",
+                "second_indication": "5.0005",
+            },
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["evaluation"]["verdict"] == "FAIL"
+
+    def test_discrimination_rejects_backwards_indication(
+        self, tokens, session_id
+    ) -> None:
+        r = client.post(
+            f"/api/v1/sessions/{session_id}/observations",
+            headers=_auth(tokens["tech"]),
+            json={
+                "test_type": "discrimination",
+                "sequence_no": 82,
+                "applied_load": "5",
+                "indication": "5.000",
+                "second_indication": "4.999",
+            },
+        )
+        assert r.status_code == 422
+        assert "INCREASE" in r.json()["detail"]
+
+    def test_discrimination_batch_sync_carries_i2(
+        self, tokens, session_id
+    ) -> None:
+        """Offline batch path must carry second_indication end-to-end."""
+        r = client.post(
+            f"/api/v1/sessions/{session_id}/observations:batch",
+            headers=_auth(tokens["tech"]),
+            json={
+                "items": [
+                    {
+                        "test_type": "discrimination",
+                        "sequence_no": 83,
+                        "applied_load": "10",
+                        "indication": "10.000",
+                        "additional_load": "0.001",
+                        "second_indication": "10.001",
+                        "revision_no": 0,
+                    }
+                ]
+            },
+        )
+        assert r.status_code == 200, r.text
+        out = r.json()
+        assert len(out["accepted"]) == 1, out
+
+
+# ---------------------------------------------------------------------------
+# P4c: remaining instrumented tests + the sheet-17 checklist API.
+# ---------------------------------------------------------------------------
+
+
+class TestP4cModules:
+    def test_equilibrium_fixed_limit_end_to_end(
+        self, tokens, session_id
+    ) -> None:
+        """equilibrium rows are judged against the fixed 1e limit."""
+        r = client.post(
+            f"/api/v1/sessions/{session_id}/observations",
+            headers=_auth(tokens["tech"]),
+            json={
+                "test_type": "equilibrium",
+                "sequence_no": 100,
+                "applied_load": "0",
+                "indication": "0.006",
+                "additional_load": "0.001",
+                "zero_error": "0",
+            },
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["evaluation"]["verdict"] == "FAIL"  # 1.5e > 1e
+        assert body["observation"]["mpe_limit"] == "0.005000"  # 1e
+
+    def test_tilting_and_band_types_accepted(
+        self, tokens, session_id
+    ) -> None:
+        """tilting (no-load), warm_up, span_stability, endurance, emc."""
+        cases = [
+            ("tilting", {"applied_load": "0", "indication": "0.005", "additional_load": "0.0025"}, "PASS"),
+            ("warm_up", {"applied_load": "5", "indication": "5.002", "zero_error": "0"}, "PASS"),
+            ("span_stability", {"applied_load": "5", "indication": "5.002", "zero_error": "0"}, "PASS"),
+            ("endurance", {"applied_load": "5", "indication": "5.002", "zero_error": "0"}, "PASS"),
+            ("emc_disturbances", {"applied_load": "0", "indication": "0", "additional_load": "0.004"}, "PASS"),
+            ("sensitivity", {"applied_load": "5", "indication": "5.002", "zero_error": "0"}, "PASS"),
+        ]
+        for i, (tt, payload, want) in enumerate(cases, start=101):
+            r = client.post(
+                f"/api/v1/sessions/{session_id}/observations",
+                headers=_auth(tokens["tech"]),
+                json={"test_type": tt, "sequence_no": i, **payload},
+            )
+            assert r.status_code == 201, r.text
+            assert r.json()["evaluation"]["verdict"] == want, tt
+
+
+class TestChecklistAPI:
+    def test_seed_then_read_full_sheet(self, tokens, session_id) -> None:
+        r = client.post(
+            f"/api/v1/sessions/{session_id}/checklist/seed",
+            headers=_auth(tokens["tech"]),
+        )
+        assert r.status_code == 200, r.text
+        created = r.json()["created"]
+        assert created >= 30  # official sheet has 30+ requirement rows
+
+        r = client.get(
+            f"/api/v1/sessions/{session_id}/checklist",
+            headers=_auth(tokens["tech"]),
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["progress"]["total"] == created
+        assert body["progress"]["open"] == created
+        # 7.1.1 mandatory block present:
+        clauses = {i["clause"] for i in body["items"]}
+        assert "7.1.1" in clauses
+
+    def test_submit_outcome_and_remarks(self, tokens, session_id) -> None:
+        r = client.put(
+            f"/api/v1/sessions/{session_id}/checklist/items",
+            headers=_auth(tokens["tech"]),
+            json={
+                "clause": "7.1.1",
+                "item_key": "manufacturer_mark",
+                "outcome": "PASSED",
+                "remarks": "Etched on the front panel",
+            },
+        )
+        assert r.status_code == 200, r.text
+        item = r.json()
+        assert item["outcome"] == "PASSED"
+        assert item["revision_no"] == 1
+
+        # Supersession: second submission wins, revision increments.
+        r = client.put(
+            f"/api/v1/sessions/{session_id}/checklist/items",
+            headers=_auth(tokens["tech"]),
+            json={
+                "clause": "7.1.1",
+                "item_key": "manufacturer_mark",
+                "outcome": "FAILED",
+            },
+        )
+        assert r.status_code == 200
+        assert r.json()["revision_no"] == 2
+        assert r.json()["outcome"] == "FAILED"
+
+        r = client.get(
+            f"/api/v1/sessions/{session_id}/checklist",
+            headers=_auth(tokens["tech"]),
+        )
+        items = {i["item_key"]: i for i in r.json()["items"]}
+        assert items["manufacturer_mark"]["outcome"] == "FAILED"
+        assert r.json()["progress"]["failed"] == 1
+
+    def test_unknown_item_404(self, tokens, session_id) -> None:
+        r = client.put(
+            f"/api/v1/sessions/{session_id}/checklist/items",
+            headers=_auth(tokens["tech"]),
+            json={"clause": "9.9.9", "item_key": "nope", "outcome": "PASSED"},
+        )
+        assert r.status_code == 404
+
+    def test_officer_cannot_modify(self, tokens, session_id) -> None:
+        r = client.post(
+            f"/api/v1/sessions/{session_id}/checklist/seed",
+            headers=_auth(tokens["officer"]),
+        )
+        assert r.status_code == 403
+
+    def test_checklist_flows_into_report(self, tokens, session_id) -> None:
+        """Finalized report carries the sheet-17 section (PDF text)."""
+        import io
+
+        from pypdf import PdfReader
+
+        # finalize the shared session
+        r = client.post(
+            f"/api/v1/sessions/{session_id}/finalize",
+            headers=_auth(tokens["tech"]),
+        )
+        assert r.status_code == 200, r.text
+        reports = client.get(
+            "/api/v1/reports", headers=_auth(tokens["tech"])
+        ).json()
+        reports = reports if isinstance(reports, list) else reports.get("reports", [])
+        mine = [x for x in reports if x["session_id"] == session_id]
+        assert mine, "report not generated"
+        pdf = client.get(
+            f"/api/v1/reports/{mine[0]['id']}/download",
+            headers=_auth(tokens["tech"]),
+        )
+        text = "".join(
+            p.extract_text() for p in PdfReader(io.BytesIO(pdf.content)).pages
+        )
+        assert "Checklist" in text
+        assert "manufacturer" in text.lower()

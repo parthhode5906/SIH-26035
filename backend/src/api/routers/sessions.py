@@ -53,6 +53,7 @@ def create_session(body: SessionCreate, request: Request, db: DbDep, user: AnyUs
         db,
         instrument_id=body.instrument_id,
         created_by=user.id,
+        evaluation_mode=body.evaluation_mode,
         start_temp_c=body.start_temp_c,
         humidity_pct=body.humidity_pct,
         pressure_hpa=body.pressure_hpa,
@@ -60,7 +61,8 @@ def create_session(body: SessionCreate, request: Request, db: DbDep, user: AnyUs
     audit(
         db, request, user, AuditAction.CREATE, "session.create",
         object_ref=f"TestSession:{session.id}",
-        detail={"instrument_id": str(body.instrument_id)},
+        detail={"instrument_id": str(body.instrument_id),
+                "evaluation_mode": body.evaluation_mode},
     )
     return SessionOut.model_validate(session)
 
@@ -156,7 +158,7 @@ def add_observation(
             additional_load=body.additional_load,
             zero_error=body.zero_error,
             source=body.source,
-
+            second_indication=body.second_indication,
         )
     except SessionStateError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc

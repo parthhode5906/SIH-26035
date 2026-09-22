@@ -11,6 +11,8 @@ export interface OfflineSession {
   id: string // client-generated UUID (or server id for upserted sessions)
   instrument_id: string
   status: 'draft' | 'in_progress' | 'completed' | 'approved'
+  /** MPE regime pinned at creation (R 76-1 §3.5); default 1× Table 6. */
+  evaluation_mode?: 'initial_verification' | 'in_service'
   start_temp_c?: string
   end_temp_c?: string
   humidity_pct?: string
@@ -30,6 +32,8 @@ export interface OfflineObservation {
   indication: string
   additional_load: string
   zero_error: string
+  /** Discrimination only: I2 after the 1.4 d extra load (null otherwise). */
+  second_indication: string | null
   // Provisional (TS mirror) verdict — never authoritative (INV-8):
   provisional_verdict: 'PASS' | 'FAIL'
   provisional_corrected_error: string
