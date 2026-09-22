@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
-import { Archive, ArrowRight, LockKeyhole, Plus, Search, UploadCloud } from 'lucide-react';
+import { Archive, ArrowRight, Download, FileText, LockKeyhole, Plus, Search, UploadCloud } from 'lucide-react';
 import SectionHeader from '@/components/SectionHeader';
 import Button from '@/components/Button';
-import { api } from '@/api/client';
+import { api, downloadFile } from '@/api/client';
 
 export function Reports() {
   const [, setLocation] = useLocation();
@@ -12,6 +12,16 @@ export function Reports() {
   const [reports, setReports] = useState([]);
   const [lastSync, setLastSync] = useState(null);
   const [loadError, setLoadError] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+
+  const download = async (reportId, kind) => {
+    setDownloadError('');
+    try {
+      await downloadFile(reportId, kind);
+    } catch (err) {
+      setDownloadError(err.message || `Could not download the ${kind.toUpperCase()}.`);
+    }
+  };
   useEffect(() => {
     api
       .reports()
@@ -23,7 +33,7 @@ export function Reports() {
   }, []);
 
   const filtered = reports.filter((report) =>
-    `${report.report_id} ${report.instrument?.asset || report.instrument || 'Instrument'} ${report.instrument?.serial || report.serial || '—'}`.toLowerCase().includes(query.toLowerCase())
+    `${report.report_id} ${report.instrument?.model || report.instrument?.asset || report.instrument || 'Instrument'} ${report.instrument?.serial_number || report.instrument?.serial || report.serial || '—'}`.toLowerCase().includes(query.toLowerCase())
   );
 
   return (
@@ -80,8 +90,8 @@ export function Reports() {
                     <div className="mt-1 text-[10px] text-[#9ab0a9]">Sealed report</div>
                   </td>
                   <td className="px-5 py-5">
-                    <div className="font-semibold text-[#33545a]">{report.instrument?.asset || report.instrument || 'Instrument'}</div>
-                    <div className="mt-1 font-mono text-[10px] text-[#7b9690]">SN {report.instrument?.serial || report.serial || '—'}</div>
+                    <div className="font-semibold text-[#33545a]">{report.instrument?.model || report.instrument?.asset || report.instrument || 'Instrument'}</div>
+                    <div className="mt-1 font-mono text-[10px] text-[#7b9690]">SN {report.instrument?.serial_number || report.instrument?.serial || report.serial || '—'}</div>
                   </td>
                   <td className="px-5 py-5 text-[#66837d]">{(report.created_at ? new Date(report.created_at).toLocaleDateString() : '—')}</td>
                   <td className="px-5 py-5">
@@ -105,15 +115,33 @@ export function Reports() {
                       {report.state || 'Verified'}
                     </span>
                   </td>
-                  <td className="px-5 py-5 text-right">
-                    <Button
-                      variant="quiet"
-                      size="sm"
-                      onClick={() => setLocation(`/verify/${report.report_id}`)}
-                      data-testid={`button-open-report-${report.report_id}`}
-                    >
-                      Open report <ArrowRight size={13} />
-                    </Button>
+                  <td className="px-5 py-5">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        onClick={() => download(report.report_id, 'pdf')}
+                        title="Download PDF"
+                        className="button-quiet rounded-md p-2"
+                        data-testid={`button-download-pdf-${report.report_id}`}
+                      >
+                        <Download size={14} />
+                      </button>
+                      <button
+                        onClick={() => download(report.report_id, 'docx')}
+                        title="Download Word (.docx)"
+                        className="button-quiet rounded-md p-2"
+                        data-testid={`button-download-docx-${report.report_id}`}
+                      >
+                        <FileText size={14} />
+                      </button>
+                      <Button
+                        variant="quiet"
+                        size="sm"
+                        onClick={() => setLocation(`/verify/${report.report_id}`)}
+                        data-testid={`button-open-report-${report.report_id}`}
+                      >
+                        Open <ArrowRight size={13} />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -126,6 +154,10 @@ export function Reports() {
           </div>
         )}
       </section>
+
+      {downloadError && (
+        <div className="mt-4 rounded-md border border-[#e7b5ae] bg-[#fff5f3] px-3 py-2.5 text-xs text-[#a6423b]">{downloadError}</div>
+      )}
 
       <div className="mt-5 flex flex-wrap items-center gap-4 text-[10px] text-[#7b9690]">
         <span className="flex items-center gap-2">

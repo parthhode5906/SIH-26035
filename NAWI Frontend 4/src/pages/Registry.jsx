@@ -5,14 +5,15 @@ import Button from '@/components/Button';
 import { api } from '@/api/client';
 
 const EMPTY_FORM = {
-  asset: '',
-  serial: '',
+  manufacturer: '',
+  model: '',
+  serial_number: '',
   min_capacity: '0',
   max_capacity: '',
-  unit: 'g',
+  base_unit: 'g',
   accuracy_class: 'III',
-  e: '1',
-  d: '1',
+  verification_scale_interval: '1',
+  display_interval: '1',
 };
 
 // Numeric fields sometimes arrive with thousands separators from copy/paste
@@ -56,14 +57,14 @@ export default function Registry() {
   );
 
   const validate = () => {
-    if (!form.asset.trim()) return 'Instrument / model is required.';
-    if (!form.serial.trim()) return 'Serial number is required.';
+    if (!form.model.trim()) return 'Model is required.';
+    if (!form.serial_number.trim()) return 'Serial number is required.';
     const maxCap = Number(cleanNumber(form.max_capacity));
     if (!form.max_capacity || Number.isNaN(maxCap) || maxCap <= 0) return 'Maximum capacity must be a positive number.';
-    const eVal = Number(cleanNumber(form.e));
-    if (!form.e || Number.isNaN(eVal) || eVal <= 0) return 'Verification interval (e) must be a positive number.';
-    const dVal = Number(cleanNumber(form.d));
-    if (!form.d || Number.isNaN(dVal) || dVal <= 0) return 'Scale interval (d) must be a positive number.';
+    const eVal = Number(cleanNumber(form.verification_scale_interval));
+    if (!form.verification_scale_interval || Number.isNaN(eVal) || eVal <= 0) return 'Verification interval (e) must be a positive number.';
+    const dVal = Number(cleanNumber(form.display_interval));
+    if (!form.display_interval || Number.isNaN(dVal) || dVal <= 0) return 'Scale interval (d) must be a positive number.';
     return '';
   };
 
@@ -77,17 +78,18 @@ export default function Registry() {
     setSubmitError('');
     try {
       const payload = {
-        asset: form.asset.trim(),
-        serial: form.serial.trim(),
+        manufacturer: form.manufacturer.trim(),
+        model: form.model.trim(),
+        serial_number: form.serial_number.trim(),
         min_capacity: cleanNumber(form.min_capacity) || '0',
         max_capacity: cleanNumber(form.max_capacity),
-        unit: form.unit,
+        base_unit: form.base_unit,
         accuracy_class: form.accuracy_class,
-        e: cleanNumber(form.e),
-        d: cleanNumber(form.d),
+        verification_scale_interval: cleanNumber(form.verification_scale_interval),
+        display_interval: cleanNumber(form.display_interval),
       };
       const created = await api.createInstrument(payload);
-      setJustRegistered(created?.serial || payload.serial);
+      setJustRegistered(created?.serial_number || payload.serial_number);
       setForm(EMPTY_FORM);
       setShow(false);
       load();
@@ -128,15 +130,16 @@ export default function Registry() {
       {show && (
         <section className="panel mb-6 p-5 md:p-7">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {field('asset', 'Instrument / model')}
-            {field('serial', 'Serial number')}
+            {field('manufacturer', 'Manufacturer')}
+            {field('model', 'Model')}
+            {field('serial_number', 'Serial number')}
             {field('min_capacity', 'Minimum capacity', { type: 'number', inputMode: 'decimal' })}
             {field('max_capacity', 'Maximum capacity', { type: 'number', inputMode: 'decimal' })}
             <label>
               <span className="eyebrow">Unit</span>
               <select
-                value={form.unit}
-                onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                value={form.base_unit}
+                onChange={(e) => setForm({ ...form, base_unit: e.target.value })}
                 className="mt-2 w-full rounded-md border border-[#c9d9d1] bg-white px-3 py-2.5 text-sm"
                 data-testid="select-instrument-unit"
               >
@@ -159,8 +162,8 @@ export default function Registry() {
                 <option value="IIII">IIII</option>
               </select>
             </label>
-            {field('e', 'Verification interval (e)', { type: 'number', inputMode: 'decimal' })}
-            {field('d', 'Scale interval (d)', { type: 'number', inputMode: 'decimal' })}
+            {field('verification_scale_interval', 'Verification interval (e)', { type: 'number', inputMode: 'decimal' })}
+            {field('display_interval', 'Scale interval (d)', { type: 'number', inputMode: 'decimal' })}
           </div>
 
           {submitError && (
@@ -215,10 +218,10 @@ export default function Registry() {
             <tbody>
               {items.map((i) => (
                 <tr key={i.id} className="table-row border-b border-[#e5ece8]">
-                  <td className="px-5 py-4 font-semibold text-[#33545a]">{i.asset}</td>
-                  <td className="px-5 py-4 font-mono">{i.serial}</td>
+                  <td className="px-5 py-4 font-semibold text-[#33545a]">{i.manufacturer} {i.model}</td>
+                  <td className="px-5 py-4 font-mono">{i.serial_number}</td>
                   <td className="px-5 py-4">
-                    {i.capacity ?? i.max_capacity} {i.unit}
+                    {i.max_capacity} {i.base_unit}
                   </td>
                   <td className="px-5 py-4">Class {i.accuracy_class}</td>
                   <td className="px-5 py-4 font-mono">{i.n_max}</td>

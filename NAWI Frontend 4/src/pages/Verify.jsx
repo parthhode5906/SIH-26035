@@ -134,26 +134,28 @@ export function Verify({ id }) {
   };
 
   const signReport = async () => {
-    const signer = signatureName.trim() || 'Dr. Elias Voss';
-    const next = {
-      ...metadata,
-      signer,
-      designation: designation.trim() || 'Approving Officer',
-      sealedAt: new Date().toISOString(),
-    };
+    // The signer's identity and timestamp are taken from the authenticated
+    // officer/admin session on the backend — nothing is posted here beyond
+    // the session id. The name/designation fields below are a local display
+    // convenience only and are overwritten by whatever the server returns.
     try {
       const report = await api.reports();
       const target = report.find((r) => r.report_id === reportId);
       if (!target) throw new Error('Report not found on server.');
-      const signed = await api.sign(target.session_id, signer, next.designation);
-      setMetadata((m) => ({ ...m, signer: signed.signer, designation: signed.designation, sealedAt: signed.signed_at }));
+      const signed = await api.sign(target.session_id);
+      const next = {
+        ...metadata,
+        signer: signed.signed_by || signatureName.trim() || 'Approving officer',
+        designation: designation.trim(),
+        sealedAt: signed.signed_at || new Date().toISOString(),
+      };
+      setMetadata(next);
       setReportHash(signed.sha256 || reportHash);
+      localStorage.setItem(`nawi-report-${reportId}`, JSON.stringify(next));
       return;
     } catch (err) {
-      setVerifyError(err.message || 'Server signing failed.');
+      setVerifyError(err.message || 'Server signing failed — sign-off requires an officer/admin account and a synced report.');
     }
-    next.signatureHash = await sha256(`${reportId}|${reportHash}|${next.signer}|${next.designation}|${next.sealedAt}`);
-    setMetadata(next);
   };
 
   return (
@@ -236,11 +238,11 @@ export function Verify({ id }) {
               <div className="grid gap-x-8 gap-y-6 p-5 sm:grid-cols-2 md:p-7">
                 <VerifyField
                   label="Instrument"
-                  value={loading ? PENDING : verified?.instrument?.asset || verified?.instrument || 'Not available'}
+                  value={loading ? PENDING : verified?.instrument?.model || verified?.instrument?.asset || verified?.instrument || 'Not available'}
                 />
                 <VerifyField
                   label="Serial number"
-                  value={loading ? PENDING : verified?.instrument?.serial || verified?.serial || 'Not available'}
+                  value={loading ? PENDING : verified?.instrument?.serial_number || verified?.instrument?.serial || verified?.serial || 'Not available'}
                   mono
                 />
                 <VerifyField label="Standard" value={verified?.standard || 'OIML R 76-2:2007'} />

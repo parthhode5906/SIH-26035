@@ -18,7 +18,7 @@ const steps=[
 ["03","Verify","The backend evaluates committed observations using the authoritative calculation engine."],
 ["04","Report","Finalize the session into sealed PDF/DOCX artifacts that can be independently verified."]
 ];
-const modules=["Eccentricity","Repeatability","Linearity","Creep","Discrimination","Environment"];
+const modules=["Zero check","Weighing performance","Eccentricity","Repeatability","Tare","Creep"];
 
 export default function Landing(){
  const [menu,setMenu]=useState(false);

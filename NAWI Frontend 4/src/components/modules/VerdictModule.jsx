@@ -1,15 +1,16 @@
 import React from 'react';
 import { CheckCircle2, ShieldCheck } from 'lucide-react';
 
-export function VerdictModule({ readings = [], observations = [], driftFlag = false }) {
+export function VerdictModule({ observations = [], driftFlag = false }) {
   const failed = observations.some((obs) => obs.verdict === 'FAIL');
-  const verdict = failed || driftFlag ? 'FAIL' : 'PASS';
+  const verdict = observations.length === 0 ? 'PENDING' : failed || driftFlag ? 'FAIL' : 'PASS';
+  const authoritativeCount = observations.filter((o) => o.authoritative).length;
   const maxError = observations.length
-    ? Math.max(...observations.map((obs) => Math.abs(obs.correctedError)))
-    : 0.7;
+    ? Math.max(...observations.map((obs) => Math.abs(Number(obs.corrected_error) || 0)))
+    : 0;
   const limit = observations.length
-    ? Math.min(...observations.map((obs) => obs.mpeLimit))
-    : 1;
+    ? Math.min(...observations.map((obs) => Number(obs.mpe_limit)).filter((n) => !Number.isNaN(n)))
+    : 0;
 
   return (
     <div className="animate-rise">
@@ -18,7 +19,7 @@ export function VerdictModule({ readings = [], observations = [], driftFlag = fa
           <div className="flex items-center gap-3">
             <div
               className={`grid h-11 w-11 place-items-center rounded-full ${
-                verdict === 'PASS' ? 'bg-[#dceee8] text-[#2e7568]' : 'bg-[#f7dfdc] text-[#b24b43]'
+                verdict === 'PASS' ? 'bg-[#dceee8] text-[#2e7568]' : verdict === 'PENDING' ? 'bg-[#eef1ee] text-[#66837d]' : 'bg-[#f7dfdc] text-[#b24b43]'
               }`}
             >
               <CheckCircle2 size={25} />
@@ -32,26 +33,30 @@ export function VerdictModule({ readings = [], observations = [], driftFlag = fa
           <p className="mt-6 max-w-xl text-sm leading-6 text-[#58746f]">
             {driftFlag
               ? 'Environmental drift exceeded the session limit and has been carried into the report review flag.'
+              : verdict === 'PENDING'
+              ? 'No observations captured yet. Complete the required test modules to see a working verdict.'
               : verdict === 'PASS'
               ? 'All captured observations are within the applicable maximum permissible error. Review the summary, then save the working record for officer approval.'
-              : 'One or more captured observations exceed the applicable maximum permissible error. Review the red rows before continuing.'}
+              : 'One or more captured observations exceed the applicable maximum permissible error. Review the flagged rows before continuing.'}
           </p>
 
           <div className="mt-7 grid gap-3 sm:grid-cols-3">
             <div className="rounded-lg bg-[#eaf4ef] p-4">
               <div className="eyebrow">Observations</div>
-              <div className="mt-3 font-mono text-xl">{Math.max(readings.length, 3)}</div>
-              <div className="mt-1 text-[10px] text-[#66837d]">captured locally</div>
+              <div className="mt-3 font-mono text-xl">{observations.length}</div>
+              <div className="mt-1 text-[10px] text-[#66837d]">
+                {authoritativeCount} of {observations.length} confirmed by server
+              </div>
             </div>
             <div className="rounded-lg bg-[#eaf4ef] p-4">
               <div className="eyebrow">Max error</div>
-              <div className="mt-3 font-mono text-xl">{maxError} e</div>
-              <div className="mt-1 text-[10px] text-[#66837d]">limit {limit} e</div>
+              <div className="mt-3 font-mono text-xl">{observations.length ? maxError.toFixed(3) : '—'}</div>
+              <div className="mt-1 text-[10px] text-[#66837d]">{observations.length ? `limit ${limit.toFixed(3)}` : 'no readings yet'}</div>
             </div>
             <div className="rounded-lg bg-[#fbf4e4] p-4">
               <div className="eyebrow !text-[#92713a]">Disposition</div>
-              <div className="mt-3 font-mono text-xl">{verdict === 'PASS' ? 'Ready' : 'Review'}</div>
-              <div className="mt-1 text-[10px] text-[#92713a]">{verdict === 'PASS' ? 'for approval' : 'required'}</div>
+              <div className="mt-3 font-mono text-xl">{verdict === 'PASS' ? 'Ready' : verdict === 'PENDING' ? 'Incomplete' : 'Review'}</div>
+              <div className="mt-1 text-[10px] text-[#92713a]">{verdict === 'PASS' ? 'for approval' : verdict === 'PENDING' ? 'capture readings' : 'required'}</div>
             </div>
           </div>
         </div>
@@ -59,7 +64,7 @@ export function VerdictModule({ readings = [], observations = [], driftFlag = fa
         <div className="grid-paper grid place-items-center rounded-lg border border-[#d7e0db] p-5 text-center">
           <div className="gauge-ring grid h-40 w-40 place-items-center">
             <div>
-              <div className={`font-mono text-4xl font-bold ${verdict === 'PASS' ? 'text-[#17333c]' : 'text-[#b24b43]'}`}>
+              <div className={`font-mono text-4xl font-bold ${verdict === 'PASS' ? 'text-[#17333c]' : verdict === 'PENDING' ? 'text-[#66837d]' : 'text-[#b24b43]'}`}>
                 {verdict}
               </div>
               <div className="mt-2 text-[9px] uppercase tracking-[.15em] text-[#2e7568]">

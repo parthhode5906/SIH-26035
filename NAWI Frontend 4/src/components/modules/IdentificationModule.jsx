@@ -7,13 +7,16 @@ export function IdentificationModule({ session = {} }) {
       <div className="grid gap-5 md:grid-cols-2">
         <div className="rounded-lg bg-[#edf4ef] p-5">
           <div className="eyebrow">Instrument</div>
-          <div className="mt-3 text-lg font-semibold">{session.asset || 'Mettler Toledo MS6002S'}</div>
-          <div className="mt-1 font-mono text-xs text-[#66837d]">SN {session.serial || 'B723814'}</div>
+          <div className="mt-3 text-lg font-semibold">{[session.manufacturer, session.model].filter(Boolean).join(' ') || session.asset || 'Instrument details pending'}</div>
+          <div className="mt-1 font-mono text-xs text-[#66837d]">SN {session.serial || '—'}</div>
         </div>
         <div className="rounded-lg bg-[#fbf4e4] p-5">
-          <div className="eyebrow !text-[#92713a]">Reference</div>
-          <div className="mt-3 text-lg font-semibold">OIML R-76</div>
-          <div className="mt-1 text-xs text-[#92713a]">Non-automatic weighing instruments</div>
+          <div className="eyebrow !text-[#92713a]">Class &amp; capacity</div>
+          <div className="mt-3 text-lg font-semibold">Class {session.accuracyClass || '—'}</div>
+          <div className="mt-1 text-xs text-[#92713a]">
+            {session.capacity ? `Max ${session.capacity} ${session.unit || 'g'}` : 'Capacity not recorded'}
+            {session.verificationScaleInterval ? ` · e = ${session.verificationScaleInterval} ${session.unit || 'g'}` : ''}
+          </div>
         </div>
       </div>
       <div className="mt-8 max-w-2xl">

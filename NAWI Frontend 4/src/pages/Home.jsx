@@ -14,6 +14,7 @@ import { StatCard } from '@/components/Card';
 import Button from '@/components/Button';
 import { loadWorkingSession } from '@/lib/offlineStore';
 import { api } from '@/api/client';
+import { normalizeDrift } from '@/lib/drift';
 
 function formatAuditTime(value) {
   if (!value) return '—';
@@ -81,7 +82,7 @@ export function Home() {
     }
     api
       .drift(liveSessionId)
-      .then(setEnvironment)
+      .then((raw) => setEnvironment(normalizeDrift(raw)))
       .catch(() => setEnvironmentError(true));
   }, [session?.id]);
 
@@ -140,10 +141,10 @@ export function Home() {
         <div className="animate-rise animate-delay-3">
           <StatCard
             label="Environment"
-            value={environment?.status ? environment.status : environment === null ? 'No session' : '—'}
+value={environment ? (environment.level === 'warn' ? 'DRIFT' : 'OK') : 'No session'}
             detail={
               environment
-                ? `${environment.temperature ?? '—'}°C · ${environment.humidity ?? '—'}% RH`
+? `${environment.temperature ?? '—'}°C · ${environment.humidity ?? '—'}% RH`
                 : environmentError
                 ? 'Drift check unavailable'
                 : 'Open a synced session to read live sensor data'
@@ -233,27 +234,27 @@ export function Home() {
                 <div className="gauge-ring grid h-28 w-28 shrink-0 place-items-center">
                   <div className="text-center">
                     <div className="font-mono text-2xl text-[#f3e8d0]">
-                      {environment.status || (environment.drift_flag ? 'DRIFT' : 'OK')}
+                      {environment.level === 'warn' ? 'DRIFT' : 'OK'}
                     </div>
                     <div className="mt-1 text-[9px] uppercase tracking-[.14em] text-[#9ec8bb]">
-                      {environment.drift_flag ? 'flagged' : 'stable'}
+                      {environment.level === 'warn' ? 'flagged' : 'stable'}
                     </div>
                   </div>
                 </div>
                 <div>
                   <div className="font-mono text-xl">{environment.temperature ?? '—'}°C</div>
                   <div className="mt-1 text-xs text-[#a5c0b8]">
-                    {environment.temperature_range || 'range not reported'}
+{environment.temperatureRange || 'range not reported'}
                   </div>
                   <div className="mt-4 font-mono text-xl">{environment.humidity ?? '—'}% RH</div>
                   <div className="mt-1 text-xs text-[#a5c0b8]">
-                    {environment.humidity_range || 'range not reported'}
+{environment.humidityRange || 'range not reported'}
                   </div>
                 </div>
               </div>
               <div className="mt-8 border-t border-white/10 pt-4 text-xs text-[#a5c0b8]">
                 <span className="status-dot mr-2" />
-                Last checked {formatAuditTime(environment.checked_at || environment.updated_at)}
+                Last checked {formatAuditTime(environment.checkedAt)}
               </div>
             </>
           ) : (
