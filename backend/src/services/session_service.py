@@ -27,6 +27,7 @@ from ..db.models import (
 from ..engine import (
     AccuracyClass,
     EngineValueError,
+    EvaluationMode,
     ScaleParameters,
     evaluate,
 )
@@ -52,14 +53,22 @@ def create_session(
     *,
     instrument_id: uuid.UUID,
     created_by: uuid.UUID,
+    evaluation_mode: str = "initial_verification",
     start_temp_c: Decimal | None = None,
     humidity_pct: Decimal | None = None,
     pressure_hpa: Decimal | None = None,
 ) -> TestSession:
-    """Open a new evaluation campaign in ``in_progress`` state."""
+    """Open a new evaluation campaign in ``in_progress`` state.
+
+    ``evaluation_mode`` pins the MPE regime for the whole campaign
+    (R 76-1 §3.5): ``initial_verification`` (1× Table 6, the default and
+    the scope of PS 26035) or ``in_service`` (2×, §3.5.2, for
+    re-verification of an instrument already in use).
+    """
     session = TestSession(
         instrument_id=instrument_id,
         status=SessionStatus.IN_PROGRESS,
+        evaluation_mode=EvaluationMode(evaluation_mode),
         start_temp_c=start_temp_c,
         humidity_pct=humidity_pct,
         pressure_hpa=pressure_hpa,
@@ -106,6 +115,7 @@ def _scale_params_for(session: TestSession) -> ScaleParameters:
         min_capacity=instrument.min_capacity,
         verification_scale_interval=instrument.verification_scale_interval,
         display_interval=instrument.display_interval,
+        base_unit=instrument.base_unit,
     )
 
 
@@ -124,6 +134,7 @@ def _insert_observation(
     additional_load: Decimal,
     zero_error: Decimal,
     source: ObservationSource,
+    second_indication: Decimal | None = None,
 ) -> Observation:
     """Shared insert path: engine evaluation then append-only persistence."""
     # Revision-0 uniqueness (NULL-safe: DB unique indexes treat NULL
@@ -147,8 +158,11 @@ def _insert_observation(
     result = evaluate(
         _scale_params_for(session),
         _observation_from(
-            applied_load, indication, additional_load, zero_error
+            applied_load, indication, additional_load, zero_error,
+            second_indication,
         ),
+        mode=session.evaluation_mode,
+        test_type=test_type.value,
     )
     row = Observation(
         session_id=session.id,
@@ -161,6 +175,7 @@ def _insert_observation(
         indication=indication,
         additional_load=additional_load,
         zero_error=zero_error,
+        second_indication=second_indication,
         error_prior=result.error_prior,
         corrected_error=result.corrected_error,
         mpe_limit=result.mpe_limit,
@@ -177,6 +192,7 @@ def _observation_from(
     indication: Decimal,
     additional_load: Decimal,
     zero_error: Decimal,
+    second_indication: Decimal | None = None,
 ) -> Any:
     """Lightweight adapter into the engine's Observation contract."""
     from ..engine import Observation
@@ -186,6 +202,7 @@ def _observation_from(
         indication=indication,
         additional_load=additional_load,
         zero_error=zero_error,
+        second_indication=second_indication,
     )
 
 
@@ -202,6 +219,7 @@ def add_observation(
     additional_load: Decimal = Decimal("0"),
     zero_error: Decimal = Decimal("0"),
     source: str = "manual",
+    second_indication: Decimal | None = None,
 ) -> tuple[Observation, dict[str, str]]:
     """Submit one reading; the engine verdict is computed and stored.
 
@@ -231,6 +249,7 @@ def add_observation(
         additional_load=additional_load,
         zero_error=zero_error,
         source=ObservationSource(source),
+        second_indication=second_indication,
     )
     db.commit()
     db.refresh(row)
@@ -303,6 +322,11 @@ def sync_observation_batch(
                     else Decimal("0"),
                     zero_error=_dec(item, "zero_error") if "zero_error" in item else Decimal("0"),
                     source=ObservationSource(str(item.get("source", "manual"))),
+                    second_indication=(
+                        _dec(item, "second_indication")
+                        if "second_indication" in item
+                        else None
+                    ),
                 )
                 db.flush()
             accepted.append(str(row.id))

@@ -17,6 +17,9 @@ function uuid(): string {
 export function NewEvaluationPage() {
   const [instruments, setInstruments] = useState<InstrumentDto[]>([])
   const [selected, setSelected] = useState<string>('')
+  const [mode, setMode] = useState<'initial_verification' | 'in_service'>(
+    'initial_verification',
+  )
   const [startTemp, setStartTemp] = useState('')
   const [humidity, setHumidity] = useState('')
   const [pressure, setPressure] = useState('')
@@ -50,6 +53,7 @@ export function NewEvaluationPage() {
     const clientSessionId = uuid()
     const payload = {
       instrument_id: selected,
+      evaluation_mode: mode,
       start_temp_c: startTemp || null,
       humidity_pct: humidity || null,
       pressure_hpa: pressure || null,
@@ -60,6 +64,7 @@ export function NewEvaluationPage() {
         id: clientSessionId,
         instrument_id: selected,
         status: 'in_progress',
+        evaluation_mode: mode,
         server_id: server.id,
         start_temp_c: startTemp || undefined,
         humidity_pct: humidity || undefined,
@@ -73,6 +78,7 @@ export function NewEvaluationPage() {
         id: clientSessionId,
         instrument_id: selected,
         status: 'in_progress',
+        evaluation_mode: mode,
         start_temp_c: startTemp || undefined,
         humidity_pct: humidity || undefined,
         pressure_hpa: pressure || undefined,
@@ -131,7 +137,53 @@ export function NewEvaluationPage() {
 
       <section className="mb-6 rounded-xl bg-raised p-5 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold text-inkmuted uppercase tracking-wide">
-          2 · Environmental conditions (start)
+          2 · MPE regime (R 76-1 §3.5)
+        </h2>
+        <div className="grid gap-2">
+          <label
+            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${
+              mode === 'initial_verification' ? 'border-accent bg-accent/5' : 'border-slate-200'
+            }`}
+          >
+            <input
+              type="radio"
+              name="evaluation_mode"
+              className="mt-1 accent-accent"
+              checked={mode === 'initial_verification'}
+              onChange={() => setMode('initial_verification')}
+            />
+            <span>
+              <span className="font-semibold">Initial verification / pattern evaluation</span>
+              <span className="block text-xs text-inkmuted">
+                MPE = Table 6 (±0.5e / ±1e / ±1.5e) — the regime for new-model approval (PS 26035).
+              </span>
+            </span>
+          </label>
+          <label
+            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${
+              mode === 'in_service' ? 'border-accent bg-accent/5' : 'border-slate-200'
+            }`}
+          >
+            <input
+              type="radio"
+              name="evaluation_mode"
+              className="mt-1 accent-accent"
+              checked={mode === 'in_service'}
+              onChange={() => setMode('in_service')}
+            />
+            <span>
+              <span className="font-semibold">In-service re-verification (§3.5.2)</span>
+              <span className="block text-xs text-inkmuted">
+                MPE = 2× Table 6 — only for re-verifying an instrument already in use.
+              </span>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <section className="mb-6 rounded-xl bg-raised p-5 shadow-sm">
+        <h2 className="mb-3 text-sm font-semibold text-inkmuted uppercase tracking-wide">
+          3 · Environmental conditions (start)
         </h2>
         <div className="grid grid-cols-3 gap-3">
           {(

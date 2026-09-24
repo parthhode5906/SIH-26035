@@ -52,6 +52,7 @@ _h2 = ParagraphStyle("R76H2", parent=styles["Heading2"], fontSize=11.5, textColo
 _small = ParagraphStyle("R76Small", parent=styles["Normal"], fontSize=8, leading=10)
 _cell = ParagraphStyle("R76Cell", parent=styles["Normal"], fontSize=8.5, leading=10)
 _th = ParagraphStyle("R76TH", parent=_cell, textColor=colors.white, fontName="Helvetica-Bold")
+_td = ParagraphStyle("R76TD", parent=_cell)
 _lab = ParagraphStyle("R76Lab", parent=styles["Normal"], fontSize=9.5, leading=12)
 _big = ParagraphStyle("R76Big", parent=styles["Title"], fontSize=20)
 
@@ -220,6 +221,50 @@ def _body(data: ReportData) -> list[object]:
         fails = sum(1 for r in rows if r["verdict"] == "FAIL")
         heading = Paragraph(f"5.{i} · {test_title(test_type)} - {len(rows)} reading(s), {fails} failed", _h2)
         flow.append(KeepTogether([heading, _observation_table(rows)]))
+
+    if data.checklist:
+        flow.append(Paragraph("5.C · Checklist (R 76-2 sheet 17)", _h2))
+        cl_data: list[list[object]] = [[
+            Paragraph(t, _th) for t in ("Clause", "Requirement", "Procedure", "Outcome", "Remarks")
+        ]]
+        for item in data.checklist:
+            outcome = item["outcome"]
+            cl_data.append([
+                Paragraph(escape(item["clause"]), _td),
+                Paragraph(escape(item["requirement"]), _td),
+                Paragraph(escape(item["test_procedure"]), _td),
+                Paragraph(escape(outcome), _td),
+                Paragraph(escape(item["remarks"]), _td),
+            ])
+        widths = [18 * mm, 70 * mm, 22 * mm, 22 * mm, 38 * mm]
+        flow.append(
+            Table(
+                cl_data,
+                colWidths=widths,
+                repeatRows=1,
+                style=TableStyle([
+                    ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#9aa4b2")),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+                    *[(
+                        "BACKGROUND", (0, i), (-1, i), colors.HexColor("#fee2e2")
+                    ) for i in range(1, len(cl_data))
+                      if cl_data[i][3].text == "FAILED"
+                    ],
+                ]),
+            )
+        )
+        prog = data.checklist_progress
+        flow.append(
+            Paragraph(
+                f"Checklist: {prog.get('passed', 0)} passed, "
+                f"{prog.get('failed', 0)} failed, {prog.get('open', 0)} open, "
+                f"{prog.get('total', 0)} items.",
+                _small,
+            )
+        )
 
     flow += [
         Paragraph("6 · Result summary", _h2),

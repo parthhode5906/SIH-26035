@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, reportsApi, signSession, type ObservationDto, type ReportArchiveDto, type SessionDto } from '@/api/client'
+import { api, reportsApi, signSession, type ChecklistOut, type ObservationDto, type ReportArchiveDto, type SessionDto } from '@/api/client'
 import { db, latestLocalObservations, type OfflineObservation } from '@/db/offline'
 import { LiveValidationRow } from '@/components/LiveValidationRow'
 import { EccentricityGrid, type GridRow } from '@/components/EccentricityGrid'
@@ -34,6 +34,7 @@ export function SessionWorkspacePage() {
   const [activePosition, setActivePosition] = useState<string | null>(null)
   const [endTemp, setEndTemp] = useState('')
   const [note, setNote] = useState<string | null>(null)
+  const [checklist, setChecklist] = useState<ChecklistOut | null>(null)
   const [drift, setDrift] = useState<DriftReportDto | null>(null)
   const [report, setReport] = useState<ReportArchiveDto | null>(null)
   // P6-1: scale link + last capture fill (token re-applies identical values).
@@ -46,7 +47,19 @@ export function SessionWorkspacePage() {
   const online = useConnectivity((s) => s.online)
   const role = useAuthStore((s) => s.role)
 
-  const mod = moduleFor(activeTest)!
+  // 'checklist' is a pseudo-tab (sheet-17 items, no observation grid).
+  const mod =
+    moduleFor(activeTest) ??
+    ({
+      testType: 'checklist',
+      title: 'Checklist',
+      clause: 'R 76-2 sheet 17',
+      positions: null,
+      suggestedLoads: () => [],
+      minRows: () => 0,
+      requiredPositions: false,
+      hint: '',
+    } as never)
 
   const reload = useCallback(async () => {
     try {
@@ -60,6 +73,7 @@ export function SessionWorkspacePage() {
         id: s.id,
         instrument_id: s.instrument_id,
         status: (s.status === 'approved' ? 'approved' : s.status) as 'draft' | 'in_progress' | 'completed' | 'approved',
+        evaluation_mode: s.evaluation_mode,
         start_temp_c: s.start_temp_c ?? undefined,
         end_temp_c: s.end_temp_c ?? undefined,
         humidity_pct: s.humidity_pct ?? undefined,
@@ -80,6 +94,7 @@ export function SessionWorkspacePage() {
           id: sessionId,
           instrument_id: local.instrument_id,
           status: local.status,
+          evaluation_mode: local.evaluation_mode ?? 'initial_verification',
           start_temp_c: local.start_temp_c ?? null,
           end_temp_c: local.end_temp_c ?? null,
           humidity_pct: local.humidity_pct ?? null,
@@ -99,6 +114,27 @@ export function SessionWorkspacePage() {
   useEffect(() => {
     void reload()
   }, [reload, online])
+
+  // P4c: fetch (or lazily seed) the R 76-2 sheet-17 checklist.
+  useEffect(() => {
+    if (!session) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        let cl = await api.getChecklist(sessionId)
+        if (cl.items.length === 0) {
+          await api.seedChecklist(sessionId)
+          cl = await api.getChecklist(sessionId)
+        }
+        if (!cancelled) setChecklist(cl)
+      } catch {
+        /* offline: checklist panel just stays hidden (online-only feature) */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [session, sessionId])
 
   // P5: fetch the session's report (post-finalize) whenever the session loads
   // or transitions.
@@ -134,6 +170,7 @@ export function SessionWorkspacePage() {
               min_capacity: found.min_capacity,
               verification_scale_interval: found.verification_scale_interval,
               display_interval: found.display_interval,
+              base_unit: found.base_unit as ScaleParameters['base_unit'],
             },
           })
         }
@@ -148,6 +185,7 @@ export function SessionWorkspacePage() {
               min_capacity: cached.min_capacity,
               verification_scale_interval: cached.verification_scale_interval,
               display_interval: cached.display_interval,
+              base_unit: cached.base_unit as ScaleParameters['base_unit'],
             },
           })
         }
@@ -209,7 +247,9 @@ export function SessionWorkspacePage() {
   const allComplete = completedCount === TEST_MODULES.length
   const incompleteList = TEST_MODULES.filter((m) => !statuses[m.testType]!.complete)
 
-  const activeStatus = statuses[activeTest]!
+  const activeStatus =
+    statuses[activeTest] ??
+    { complete: false, have: 0, need: 0, missingPositions: [], clause: '', hint: '' }
   const modRows = useMemo(() => allRows.filter((r) => r.test_type === activeTest), [allRows, activeTest])
 
   // Next sequence number for the active test type: one past the highest
@@ -235,6 +275,7 @@ export function SessionWorkspacePage() {
     indication: string
     additional_load: string
     zero_error: string
+    second_indication: string | null
     provisional: { verdict: 'PASS' | 'FAIL'; corrected_error: string }
   }) {
     if (!instrument) {
@@ -253,6 +294,7 @@ export function SessionWorkspacePage() {
       indication: values.indication,
       additional_load: values.additional_load,
       zero_error: values.zero_error,
+      second_indication: values.second_indication,
       provisional_verdict: values.provisional.verdict,
       provisional_corrected_error: values.provisional.corrected_error,
       source: 'manual',
@@ -270,6 +312,9 @@ export function SessionWorkspacePage() {
           indication: values.indication,
           additional_load: values.additional_load,
           zero_error: values.zero_error,
+          ...(values.second_indication !== null
+            ? { second_indication: values.second_indication }
+            : {}),
         })
         await db.observations.update(newId, { sync_state: 'synced' })
       } catch {
@@ -362,6 +407,14 @@ export function SessionWorkspacePage() {
         <div>
           <h1 className="text-2xl font-bold">Session {sessionId.slice(0, 8)}…</h1>
           <p className="text-sm text-inkmuted">{instrument?.label ?? 'Loading instrument…'} · status: {session?.status ?? 'unknown'}</p>
+          {session?.evaluation_mode === 'in_service' && (
+            <p
+              className="mt-1 inline-block rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800"
+              title="R 76-1 §3.5.2: in-service MPE limits are 2× Table 6"
+            >
+              In-service mode — MPE = 2× Table 6 (§3.5.2)
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -463,6 +516,15 @@ export function SessionWorkspacePage() {
             </button>
           )
         })}
+        <button
+          type="button"
+          onClick={() => setActiveTest('checklist')}
+          className={`px-4 py-2 text-sm font-medium ${activeTest === 'checklist' ? 'border-b-2 border-accent text-accent' : 'text-inkmuted hover:text-ink'}`}
+          title="R 76-2 sheet 17 — markings, devices, prohibitions (test 17)"
+        >
+          {checklist && checklist.progress.open === 0 ? '✓ ' : ''}
+          Checklist
+        </button>
       </div>
 
       {mod.requiredPositions && activeTest === 'eccentricity' && (
@@ -485,7 +547,7 @@ export function SessionWorkspacePage() {
         />
       )}
 
-      {session?.status === 'in_progress' && (
+      {session?.status === 'in_progress' && activeTest !== 'checklist' && (
         <div className="mb-6">
           <ScaleConnectPanel
             link={scaleLink}
@@ -496,17 +558,104 @@ export function SessionWorkspacePage() {
             <LiveValidationRow
               key={`${activeTest}-${position ?? ''}`}
               scale={instrument.scale}
-              testType={mod.title}
+              testType={activeTest}
+              displayTitle={mod.title}
               sequenceNo={nextSequenceNo}
               position={position ?? undefined}
               initialLoad={mod.suggestedLoads(instrument.scale)[0]}
               capture={capture ?? undefined}
+              mode={session?.evaluation_mode ?? 'initial_verification'}
               onCommit={(v) => void commitRow(v)}
             />
           )}
           <p className="mt-2 text-xs text-inkmuted">
             {mod.clause} · {mod.hint}
           </p>
+        </div>
+      )}
+
+      {activeTest === 'checklist' && checklist && (
+        <div className="mb-6 rounded-lg border border-slate-200 bg-raised p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-xs font-semibold text-inkmuted uppercase tracking-wide">
+              Checklist (R 76-2 sheet 17) — {checklist.progress.passed} passed ·{' '}
+              {checklist.progress.failed} failed · {checklist.progress.open} open
+            </h3>
+          </div>
+          <div className="max-h-96 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs text-inkmuted uppercase">
+                  <th className="py-2 pr-2">Clause</th>
+                  <th className="py-2 pr-2">Requirement</th>
+                  <th className="py-2 pr-2">Outcome</th>
+                  <th className="py-2">Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {checklist.items.map((item) => (
+                  <tr key={item.id} className="border-b border-slate-100 align-top">
+                    <td className="mono py-2 pr-2 text-xs">{item.clause}</td>
+                    <td className="py-2 pr-2">{item.requirement}</td>
+                    <td className="py-2 pr-2">
+                      <select
+                        className="rounded border border-slate-300 px-2 py-1 text-xs focus:border-accent focus:outline-none"
+                        value={item.outcome}
+                        disabled={session?.status !== 'in_progress' && session?.status !== 'draft'}
+                        onChange={(e) => {
+                          const outcome = e.target.value as 'PASSED' | 'FAILED' | 'UNCHECKED' | 'NA'
+                          void (async () => {
+                            try {
+                              const updated = await api.updateChecklistItem(sessionId, {
+                                clause: item.clause,
+                                item_key: item.item_key,
+                                outcome,
+                              })
+                              setChecklist((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      items: prev.items.map((i) =>
+                                        i.clause === item.clause && i.item_key === item.item_key
+                                          ? updated
+                                          : i,
+                                      ),
+                                      progress: {
+                                        ...prev.progress,
+                                        passed:
+                                          prev.progress.passed +
+                                          (outcome === 'PASSED' && item.outcome !== 'PASSED' ? 1 : 0) -
+                                          (item.outcome === 'PASSED' && outcome !== 'PASSED' ? 1 : 0),
+                                        failed:
+                                          prev.progress.failed +
+                                          (outcome === 'FAILED' && item.outcome !== 'FAILED' ? 1 : 0) -
+                                          (item.outcome === 'FAILED' && outcome !== 'FAILED' ? 1 : 0),
+                                        open:
+                                          prev.progress.open +
+                                          (outcome === 'UNCHECKED' && item.outcome !== 'UNCHECKED' ? 1 : 0) -
+                                          (item.outcome === 'UNCHECKED' && outcome !== 'UNCHECKED' ? 1 : 0),
+                                      },
+                                    }
+                                  : prev,
+                              )
+                            } catch {
+                              setNote('Could not save the checklist outcome — are you online?')
+                            }
+                          })()
+                        }}
+                      >
+                        <option value="UNCHECKED">Unchecked</option>
+                        <option value="NA">N/A</option>
+                        <option value="PASSED">Passed</option>
+                        <option value="FAILED">Failed</option>
+                      </select>
+                    </td>
+                    <td className="py-2 text-xs text-inkmuted">{item.remarks ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -522,6 +671,8 @@ export function SessionWorkspacePage() {
         </div>
       )}
 
+      {activeTest === 'checklist' ? null : (
+      <div>
       <h2 className="mb-2 text-sm font-semibold text-inkmuted uppercase tracking-wide">
         {mod.title} — {activeStatus.have}/{activeStatus.need}
         {activeStatus.missingPositions.length > 0 &&
@@ -590,6 +741,8 @@ export function SessionWorkspacePage() {
           </tbody>
         </table>
       </div>
+      </div>
+      )}
 
       <section className="mt-6 rounded-xl bg-raised p-5 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold text-inkmuted uppercase tracking-wide">

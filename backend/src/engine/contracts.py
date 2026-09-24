@@ -187,6 +187,11 @@ class ScaleParameters:
             at construction (kept ``None`` until provided); validated when
             present. API schemas may materialize it as ``Decimal("0")``
             when unknown -- validation then skips the d/e consistency rule.
+        base_unit: The declared unit of every quantity on this contract
+            (``"kg"`` default, ``"g"``). Table 3's e-range rows are
+            gram-denominated (R 76-1 2006, p. 27), so class validation
+            converts ``e`` to grams using this unit; every other engine
+            computation is unit-agnostic.
     """
 
     accuracy_class: AccuracyClass
@@ -194,6 +199,7 @@ class ScaleParameters:
     min_capacity: Decimal
     verification_scale_interval: Decimal
     display_interval: Decimal | None = None
+    base_unit: str = "kg"
 
     def __post_init__(self) -> None:
         if not isinstance(self.accuracy_class, AccuracyClass):
@@ -227,6 +233,10 @@ class ScaleParameters:
                 coerce_decimal(
                     self.display_interval, "display_interval (d)", allow_negative=False
                 ),
+            )
+        if self.base_unit not in ("kg", "g"):
+            raise EngineValueError(
+                f"base_unit: must be 'kg' or 'g'; got {self.base_unit!r}."
             )
 
     # -- Derived quantities ------------------------------------------------
@@ -271,6 +281,9 @@ class Observation:
     indication: Decimal
     additional_load: Decimal = field(default_factory=lambda: Decimal("0"))
     zero_error: Decimal = field(default_factory=lambda: Decimal("0"))
+    # Discrimination only (A.4.8.2 / R 76-2 sheet 4.1.1): indication after
+    # the extra load of 1.4 d. ``None`` for every other test type.
+    second_indication: Decimal | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -291,6 +304,14 @@ class Observation:
             self, "zero_error",
             coerce_decimal(self.zero_error, "zero_error (E0)", allow_negative=True),
         )
+        if self.second_indication is not None:
+            object.__setattr__(
+                self, "second_indication",
+                coerce_decimal(
+                    self.second_indication, "second_indication (I2)",
+                    allow_negative=False,
+                ),
+            )
 
 
 @dataclass(frozen=True, slots=True)

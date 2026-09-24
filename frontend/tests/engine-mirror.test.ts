@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import vectors from '../../backend/tests/golden_vectors.json'
 import {
+  type EvaluationMode,
   EngineValueError,
   evaluate,
   validate_instrument_spec,
@@ -22,6 +23,7 @@ interface InstrumentSpec {
   min_capacity: string
   verification_scale_interval: string
   display_interval?: string
+  base_unit?: 'kg' | 'g'
 }
 
 const instruments = vectors.instruments as Record<string, InstrumentSpec>
@@ -34,6 +36,7 @@ function resolveInstrument(ref: string | InstrumentSpec): ScaleParameters {
     min_capacity: spec.min_capacity,
     verification_scale_interval: spec.verification_scale_interval,
     display_interval: spec.display_interval ?? null,
+    base_unit: spec.base_unit ?? 'kg',
   }
 }
 
@@ -43,6 +46,11 @@ describe('TS mirror: evaluation cases (shared golden vectors)', () => {
       const result = evaluate(
         resolveInstrument(v.instrument as string | InstrumentSpec),
         v.observation as Observation,
+        // EVAL-MODE-01 pins the §3.5.2 in-service regime (2× Table 6).
+        (v as { mode?: EvaluationMode }).mode ?? 'initial_verification',
+        // P4b: DISC/TNL vectors exercise the discrimination and fixed-1e
+        // no-load branches — the mirror must agree branch-for-branch.
+        (v as { test_type?: string }).test_type,
       )
       expect(result.error_prior).toBe(v.expected.error_prior)
       expect(result.corrected_error).toBe(v.expected.corrected_error)

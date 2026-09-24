@@ -46,11 +46,12 @@ defense-in-depth mechanism: any future class or band added without a
 
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass, field
 from decimal import Decimal, localcontext
 from typing import Final
 
-from .class_rules import VERIFIED_CLASSES
+from .class_rules import VERIFIED_CLASSES, _TO_GRAMS
 from .contracts import (
     AccuracyClass,
     EngineValueError,
@@ -63,6 +64,7 @@ from .error_calc import corrected_error, error_prior_to_rounding
 from .rounding import INTERNAL_PRECISION, format_quantity
 
 __all__ = [
+    "EvaluationMode",
     "STRICT_VERIFIED_ONLY",
     "Verified",
     "dec",
@@ -70,6 +72,28 @@ __all__ = [
     "mpe_for_load",
     "quantize_to_d",
 ]
+
+
+class EvaluationMode(str, enum.Enum):
+    """Which Table 6 column set applies (R 76-1 Section 3.5).
+
+    INITIAL_VERIFICATION (default): pattern evaluation / first verification
+    limits per Section 3.5.1 — the scope of PS 26035.
+
+    IN_SERVICE: Section 3.5.2 — "The maximum permissible error in service
+    shall be twice the value in 3.5.1" — a *separate* legal regime used
+    when re-verifying an instrument already in use. It must ALWAYS be an
+    explicit parameter (decision D-19): silently doubling the constant
+    would corrupt pattern-evaluation verdicts.
+    """
+
+    INITIAL_VERIFICATION = "initial_verification"
+    IN_SERVICE = "in_service"
+
+    @property
+    def mpe_multiplier(self) -> Decimal:
+        """Factor applied to the Table 6 base bands for this mode."""
+        return Decimal("1") if self is EvaluationMode.INITIAL_VERIFICATION else Decimal("2")
 
 #: When ``True`` (default), evaluating an instrument whose class has not
 #: passed the P1-2 human verification gate raises :class:`EngineValueError`.
@@ -283,7 +307,10 @@ def dec(value: float | int | str | Decimal) -> Decimal:
 
 
 def mpe_for_load(
-    accuracy_class: AccuracyClass, load_in_e: Decimal, e: Decimal
+    accuracy_class: AccuracyClass,
+    load_in_e: Decimal,
+    e: Decimal,
+    mode: EvaluationMode = EvaluationMode.INITIAL_VERIFICATION,
 ) -> Decimal:
     """Return the MPE magnitude (in base unit) for a load on a class.
 
@@ -292,9 +319,11 @@ def mpe_for_load(
         load_in_e: The applied load expressed in intervals (``m = L / e``).
             Must be finite and >= 0.
         e: The verification scale interval; must be > 0.
+        mode: ``INITIAL_VERIFICATION`` (Table 6 as written, the default)
+            or ``IN_SERVICE`` (Section 3.5.2: twice the Table 6 values).
 
     Returns:
-        ``factor * e`` for the band containing ``load_in_e``.
+        ``factor * multiplier * e`` for the band containing ``load_in_e``.
 
     Raises:
         EngineValueError: If the accuracy class has not passed the P1-2
@@ -324,7 +353,7 @@ def mpe_for_load(
             above_lo = band.lo is None or load_in_e > band.lo
             below_hi = band.hi is None or load_in_e <= band.hi
             if above_lo and below_hi:
-                return band.factor * e
+                return band.factor * mode.mpe_multiplier * e
     # No covering band: table gap. Never guess — raise (rules.md section 7).
     raise EngineValueError(
         f"No MPE band covers load {load_in_e}e for class "
@@ -337,15 +366,26 @@ def mpe_for_load(
 # --------------------------------------------------------------------------
 
 
-def evaluate(scale: ScaleParameters, observation: Observation) -> EvaluationResult:
+def evaluate(
+    scale: ScaleParameters,
+    observation: Observation,
+    mode: EvaluationMode = EvaluationMode.INITIAL_VERIFICATION,
+    test_type: str | None = None,
+) -> EvaluationResult:
     """Run the full deterministic evaluation chain for one observation.
 
     Chain (all exact Decimal arithmetic):
 
         1. E  = I + 0.5e - dL - L       (A.4.4.3)
         2. Ec = E - E0                  (corrected error)
-        3. MPE = band(class, L/e, e)    (P1-2 verification gate inside)
+        3. MPE = band(class, L/e, e)    (P1-2 verification gate inside;
+                                        multiplied per ``mode`` — in-service
+                                        limits are 2× Table 6, Section 3.5.2)
         4. verdict = PASS iff |Ec| <= MPE
+
+    The default mode is INITIAL_VERIFICATION: pattern evaluation per
+    PS 26035. Callers evaluating a re-verification of an instrument already
+    in use must pass ``EvaluationMode.IN_SERVICE`` explicitly.
 
     Domain guards enforced here (fail-fast, auditor-readable messages):
 
@@ -357,6 +397,9 @@ def evaluate(scale: ScaleParameters, observation: Observation) -> EvaluationResu
         scale: Validated instrument parameters (call
             :func:`validate_instrument_spec` first at the service layer).
         observation: The raw reading.
+        test_type: API test type when known; disambiguates the fixed 1e
+            no-load zero-row limit (3.9.2.3) from a genuine weighing row at
+            Min = 0. Other test types evaluate identically to None.
 
     Returns:
         The immutable :class:`EvaluationResult` bundle.
@@ -381,12 +424,153 @@ def evaluate(scale: ScaleParameters, observation: Observation) -> EvaluationResu
 
     e = scale.verification_scale_interval
 
+    is_discrimination = test_type == "discrimination"
+    if is_discrimination and observation.second_indication is None:
+        raise EngineValueError(
+            "discrimination rows require second_indication (I2)."
+        )
+    if not is_discrimination and observation.second_indication is not None:
+        raise EngineValueError(
+            "second_indication (I2) is only valid for discrimination rows."
+        )
+
+    # ---- Discrimination (R 76-1 3.8.2.2 digital + A.4.8.2) ----------------
+    # NOT an error test: it verifies that the instrument RESPONDS to a
+    # small extra load. With 1/10 d extra already on the receptor, gently
+    # adding 1.4 d must shift the indication unambiguously: I2 - I1 >= d.
+    # (R 76-2 sheet 4.1.1 records L, I1, dL, +1/10 d, 1.4 d, I2, I2-I1.)
+    if is_discrimination:
+        d = scale.display_interval
+        if d is None or d <= 0:
+            raise EngineValueError(
+                "discrimination requires display_interval (d); the instrument "
+                "record has no display resolution."
+            )
+        d_g = d * _TO_GRAMS[scale.base_unit]
+        # Threshold is 5 mg = 0.005 g; d_g is gram-denominated.
+        if d_g < Decimal("0.005"):
+            raise EngineValueError(
+                "discrimination (digital, A.4.8.2) applies only to "
+                "instruments with d >= 5 mg; this instrument has "
+                f"d = {d} {scale.base_unit}."
+            )
+        delta = observation.second_indication - observation.indication
+        if delta < 0:
+            raise EngineValueError(
+                f"second_indication (I2) {observation.second_indication} is "
+                "below the pre-extra-load indication (I1) "
+                f"{observation.indication}: the indication must INCREASE "
+                "after the 1.4 d extra load; check the reading."
+            )
+        passed = delta >= d
+        cmp_word = ">=" if passed else "<"
+        verdict_word = "PASS" if passed else "FAIL"
+        message = (
+            f"Discrimination at L = {format_quantity(observation.applied_load)}: "
+            f"I1 = {format_quantity(observation.indication)}, "
+            f"I2 = {format_quantity(observation.second_indication)}, "
+            f"I2 - I1 = {format_quantity(delta)} "
+            f"{cmp_word} d = {format_quantity(d)} -> {verdict_word} "
+            "(A.4.8.2: add 1.4 d, expect +1 interval)."
+        )
+        return EvaluationResult(
+            error_prior=Decimal("0"),
+            corrected_error=delta,
+            mpe_limit=d,
+            mpe_in_e=format_quantity(d / e),
+            load_in_e=format_quantity(observation.applied_load / e),
+            verdict=Verdict.PASS if passed else Verdict.FAIL,
+            message=message,
+        )
+
+    # ---- Temperature effect on no-load (3.9.2.3 / A.5.3.2) ---------------
+    # Not the class band: the limit is one full e of zero drift per 1 degC
+    # (class I) or per 5 degC (other classes). Zero-error rows (L = 0,
+    # I = 0, dL = measured changeover) evaluate |Ec| against that fixed e.
+    # A genuine weighing row at Min = 0 keeps the 0.5 e band because the
+    # fixed limit applies only when the caller identifies the test type.
+    # ---- Fixed-limit family (P4c) ----------------------------------------
+    # Tests whose criterion is a FIXED multiple of e — deliberately NOT the
+    # 0.5e Table 6 band ("e" here means one full verification interval):
+    #
+    #   tilting (no load)   2 e zero shift        (3.9.1.1; loaded tilting
+    #                        rows use the class band with tilted-zero E0)
+    #   equilibrium         1 e print/store deviation under disturbance
+    #                                             (4.4.2 / A.4.12)
+    #   emc_disturbances    deviation <= e or significant fault (B.3.x)
+    #
+    # warm_up (A.5.2), span_stability (B.4) and endurance (3.9.4.3) say
+    # "within the mpe FOR THE APPLIED LOAD" — that IS the class band, so
+    # those test types evaluate on the standard path with no branch here.
+    _FIXED_LIMITS_IN_E: Final[dict[str, str]] = {
+        "equilibrium": "1",
+        "emc_disturbances": "1",
+    }
+    if test_type == "tilting" and observation.applied_load == 0:
+        factor = Decimal("2")
+    elif test_type in _FIXED_LIMITS_IN_E:
+        factor = Decimal(_FIXED_LIMITS_IN_E[test_type])
+    else:
+        factor = None
+    if factor is not None:
+        with localcontext() as ctx:
+            ctx.prec = INTERNAL_PRECISION
+            error_prior = error_prior_to_rounding(observation, e)
+            ec = corrected_error(error_prior, observation.zero_error)
+            limit = factor * e
+            verdict = Verdict.PASS if abs(ec) <= limit else Verdict.FAIL
+        message = (
+            f"{test_type.replace('_', ' ')}: |Ec| = "
+            f"{format_quantity(abs(ec))} "
+            f"{'<=' if verdict is Verdict.PASS else '>'} limit {factor:f}e = "
+            f"{format_quantity(limit)} -> "
+            f"{'PASS' if verdict is Verdict.PASS else 'FAIL'}."
+        )
+        return EvaluationResult(
+            error_prior=error_prior,
+            corrected_error=ec,
+            mpe_limit=limit,
+            mpe_in_e=format_quantity(factor),
+            load_in_e=format_quantity(observation.applied_load / e),
+            verdict=verdict,
+            message=message,
+        )
+
+    if test_type == "temperature_no_load":
+        if observation.applied_load != 0:
+            raise EngineValueError(
+                "temperature_no_load rows are no-load zero determinations "
+                "(3.9.2.3); applied_load must be 0."
+            )
+        with localcontext() as ctx:
+            ctx.prec = INTERNAL_PRECISION
+            error_prior = error_prior_to_rounding(observation, e)
+            zero_ec = corrected_error(error_prior, observation.zero_error)
+            verdict = Verdict.PASS if abs(zero_ec) <= e else Verdict.FAIL
+        cmp_word = "<=" if verdict is Verdict.PASS else ">"
+        verdict_word = "PASS" if verdict is Verdict.PASS else "FAIL"
+        message = (
+            "Zero-point determination at no load: |Ec| = "
+            f"{format_quantity(abs(zero_ec))} {cmp_word} 1e = "
+            f"{format_quantity(e)} -> {verdict_word} "
+            "(3.9.2.3: zero drift <= 1e)."
+        )
+        return EvaluationResult(
+            error_prior=error_prior,
+            corrected_error=zero_ec,
+            mpe_limit=e,
+            mpe_in_e="1.000000",
+            load_in_e="0.000000",
+            verdict=verdict,
+            message=message,
+        )
+
     with localcontext() as ctx:
         ctx.prec = INTERNAL_PRECISION
         load_in_e = observation.applied_load / e
         error_prior = error_prior_to_rounding(observation, e)
         ec = corrected_error(error_prior, observation.zero_error)
-        mpe_limit = mpe_for_load(scale.accuracy_class, load_in_e, e)
+        mpe_limit = mpe_for_load(scale.accuracy_class, load_in_e, e, mode)
         verdict = Verdict.PASS if abs(ec) <= mpe_limit else Verdict.FAIL
 
     mpe_in_e = mpe_limit / e  # exact: factor * e / e

@@ -7,33 +7,56 @@
  * plain-language reasons (§7 rule 2).
  */
 import { useEffect, useRef, useState } from 'react'
-import { EngineValueError, evaluate, type EvaluationResult } from '@/engine/mpe'
+import {
+  EngineValueError,
+  evaluate,
+  type EvaluationMode,
+  type EvaluationResult,
+} from '@/engine/mpe'
 import type { ScaleParameters } from '@/engine/mpe'
 import { VerdictBadge } from '@/components/VerdictBadge'
 
 export interface LiveValidationRowProps {
   scale: ScaleParameters
+  /** API test_type key (drives branch-specific inputs like I₂). */
   testType: string
+  /** Human title for the row header (defaults to testType). */
+  displayTitle?: string
   sequenceNo: number
   position?: string
   /** Rulebook-suggested load prefilled (§A.4.x); still editable. */
   initialLoad?: string
   /** Scale capture fill (P6-1): token bumps to re-apply the same value. */
   capture?: { value: string; token: number }
+  /** Session-pinned MPE regime (§3.5); provisional mirror uses it too. */
+  mode?: EvaluationMode
   onCommit: (values: {
     applied_load: string
     indication: string
     additional_load: string
     zero_error: string
+    /** Discrimination only: I2 after the 1.4 d extra load. */
+    second_indication: string | null
     provisional: EvaluationResult
   }) => void
 }
 
-export function LiveValidationRow({ scale, testType, sequenceNo, position, initialLoad, capture, onCommit }: LiveValidationRowProps) {
+export function LiveValidationRow({
+  scale,
+  testType,
+  displayTitle,
+  sequenceNo,
+  position,
+  initialLoad,
+  capture,
+  mode = 'initial_verification',
+  onCommit,
+}: LiveValidationRowProps) {
   const [load, setLoad] = useState(initialLoad ?? '')
   const [indication, setIndication] = useState('')
   const [dL, setDL] = useState('0')
   const [e0, setE0] = useState('0')
+  const [i2, setI2] = useState('')
   const [provisional, setProvisional] = useState<EvaluationResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const previousCaptureToken = useRef<number | null>(null)
@@ -49,23 +72,33 @@ export function LiveValidationRow({ scale, testType, sequenceNo, position, initi
     if (previousCaptureToken.current === capture.token) return
     previousCaptureToken.current = capture.token
     setIndication(capture.value)
-    runProvisional(load, capture.value)
+    runProvisional(load, capture.value, i2)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capture?.token])
 
-  function runProvisional(l: string, i: string) {
-    if (!l || !i) {
+  function runProvisional(l: string, i: string, second?: string) {
+    if (!l || !i || (testType === 'discrimination' && !second)) {
       setProvisional(null)
       setError(null)
       return
     }
     try {
-      setProvisional(evaluate(scale, {
-        applied_load: l,
-        indication: i,
-        additional_load: dL || '0',
-        zero_error: e0 || '0',
-      }))
+      setProvisional(
+        evaluate(
+          scale,
+          {
+            applied_load: l,
+            indication: i,
+            additional_load: dL || '0',
+            zero_error: e0 || '0',
+            ...(testType === 'discrimination' && second
+              ? { second_indication: second }
+              : {}),
+          },
+          mode,
+          testType,
+        ),
+      )
       setError(null)
     } catch (err) {
       setProvisional(null)
@@ -80,12 +113,14 @@ export function LiveValidationRow({ scale, testType, sequenceNo, position, initi
       indication: indication,
       additional_load: dL || '0',
       zero_error: e0 || '0',
+      second_indication: testType === 'discrimination' ? i2 : null,
       provisional,
     })
     setLoad('')
     setIndication('')
     setDL('0')
     setE0('0')
+    setI2('')
     setProvisional(null)
     setError(null)
   }
@@ -93,13 +128,21 @@ export function LiveValidationRow({ scale, testType, sequenceNo, position, initi
   return (
     <div className="rounded-lg border border-slate-200 bg-raised p-4">
       <div className="mb-3 text-xs font-semibold text-inkmuted uppercase tracking-wide">
-        {testType}{position ? ` · position ${position}` : ''} · row #{sequenceNo}
+        {displayTitle ?? testType}{position ? ` · position ${position}` : ''} · row #{sequenceNo}
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {(
           [
             ['Applied load (L)', load, setLoad, 'e.g. 5'],
-            ['Indication (I)', indication, setIndication, 'e.g. 5.006'],
+            [
+              testType === 'discrimination' ? 'Indication (I₁)' : 'Indication (I)',
+              indication,
+              setIndication,
+              'e.g. 5.006',
+            ],
+            ...(testType === 'discrimination'
+              ? ([['I₂ (after 1.4 d)', i2, setI2, 'e.g. 5.002']] as const)
+              : []),
             ['ΔL (changeover)', dL, setDL, '0'],
             ['E₀ (zero error)', e0, setE0, '0'],
           ] as const
@@ -116,7 +159,8 @@ export function LiveValidationRow({ scale, testType, sequenceNo, position, initi
                 // Never block typing; re-evaluate live.
                 const nextL = label.startsWith('Applied') ? e.target.value : load
                 const nextI = label.startsWith('Indication') ? e.target.value : indication
-                runProvisional(nextL, nextI)
+                const nextI2 = label.startsWith('I₂') ? e.target.value : i2
+                runProvisional(nextL, nextI, nextI2)
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') commit()

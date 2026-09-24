@@ -131,6 +131,10 @@ class SessionCreate(BaseModel):
     """POST /sessions body."""
 
     instrument_id: uuid.UUID
+    #: MPE regime for this campaign (R 76-1 §3.5). Defaults to initial
+    #: verification (1× Table 6); ``in_service`` applies the 2× limits of
+    #: §3.5.2 for re-verification of an instrument already in use.
+    evaluation_mode: Literal["initial_verification", "in_service"] = "initial_verification"
     start_temp_c: StrictDecimal | None = None
     humidity_pct: StrictDecimal | None = None
     pressure_hpa: StrictDecimal | None = None
@@ -152,6 +156,7 @@ class SessionOut(BaseModel):
     id: uuid.UUID
     instrument_id: uuid.UUID
     status: str
+    evaluation_mode: str
     start_temp_c: Decimal | None
     end_temp_c: Decimal | None
     humidity_pct: Decimal | None
@@ -194,6 +199,19 @@ class ObservationCreate(BaseModel):
         "tare",
         "creep",
         "zero_check",
+        # Influence-factor modules (P4b)
+        "temperature_no_load",
+        "damp_heat",
+        "voltage_variations",
+        "discrimination",
+        # Long-duration / physical / EMC modules (P4c)
+        "sensitivity",
+        "equilibrium",
+        "tilting",
+        "warm_up",
+        "span_stability",
+        "endurance",
+        "emc_disturbances",
     ]
     position: Literal["1", "2", "3", "4", "5"] | None = None
     sequence_no: int = Field(ge=0)
@@ -202,6 +220,9 @@ class ObservationCreate(BaseModel):
     additional_load: NonNegativeDecimal = "0"
     zero_error: StrictDecimal = "0"
     source: Literal["manual", "serial", "ocr"] = "manual"
+    # Discrimination only (A.4.8.2 / R 76-2 p.14): indication I2 after the
+    # extra load of 1.4 d; must rise by >= d from `indication` (I1).
+    second_indication: StrictDecimal | None = None
 
 
 class ObservationOut(BaseModel):
@@ -226,6 +247,7 @@ class ObservationOut(BaseModel):
     verdict: str
     entered_at: datetime
     source: str
+    second_indication: Decimal | None = None
 
 
 class ObservationCreatedResponse(BaseModel):

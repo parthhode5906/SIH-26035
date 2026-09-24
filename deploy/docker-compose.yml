@@ -4,8 +4,9 @@
 # frontend (nginx serving the built PWA and proxying /api to the backend).
 #
 # Usage:  cd deploy && docker compose up --build
-# First run creates the volumes; the backend runs create_all() on boot
-# (Alembic chain is the P7 hardening follow-up — see phases.md parking lot).
+# First run creates the volumes; the backend runs `alembic upgrade head`
+# on every boot — migrations are the production schema path (never
+# create_all outside dev).
 #
 # SECURITY: set JWT_SECRET_KEY and POSTGRES_PASSWORD via a .env file next to
 # this compose file (never commit it). See deploy/.env.example.

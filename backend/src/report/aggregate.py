@@ -16,18 +16,31 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
-from ..db.models import Instrument, Observation, Report, TestSession, User
+from ..db.models import Instrument, Observation, ObservationTestType, Report, TestSession, User
+from ..engine import EvaluationMode
 from ..services.instrument_service import drift_watchdog
 from ..services.session_service import latest_observations
 
 #: Display order of test sections in the report (R 76-2 layout order).
 TEST_ORDER: tuple[str, ...] = (
-    "weighing_performance",
-    "eccentricity",
-    "repeatability",
-    "tare",
-    "creep",
-    "zero_check",
+    # R 76-2 summary-of-type-evaluation order (official numbering).
+    "weighing_performance",     # 1
+    "temperature_no_load",      # 2  (3.9.2.3 / A.5.3.2)
+    "eccentricity",             # 3
+    "discrimination",           # 4  (3.8 / A.4.8)
+    "repeatability",            # 5
+    "zero_check",               # 6.1 zero-tracking break-out
+    "creep",                    # 6.2 creep / return to zero
+    "tare",                     # 9
+    "damp_heat",                # B.2 (electronic instruments)
+    "voltage_variations",       # 11 (A.5.4)
+    "sensitivity",              # 4.2 (A.4.9, non-self-indicating)
+    "equilibrium",              # 7  (4.4.2 / A.4.12)
+    "tilting",                  # 8  (3.9.1 / A.5.1)
+    "warm_up",                  # 10 (A.5.2)
+    "span_stability",           # 14 (B.4)
+    "endurance",                # 15 (A.6)
+    "emc_disturbances",         # 12 (B.3.x)
 )
 
 _TEST_TITLES: dict[str, str] = {
@@ -37,6 +50,17 @@ _TEST_TITLES: dict[str, str] = {
     "tare": "Tare",
     "creep": "Creep / return to zero",
     "zero_check": "Zero check (initial zero-tracking break-out)",
+    "temperature_no_load": "Temperature effect on no-load indication (3.9.2.3)",
+    "damp_heat": "Damp heat, steady state (B.2)",
+    "voltage_variations": "Voltage variations (A.5.4)",
+    "discrimination": "Discrimination (3.8 / A.4.8.2)",
+    "sensitivity": "Sensitivity (A.4.9, non-self-indicating)",
+    "equilibrium": "Stability of equilibrium (4.4.2 / A.4.12)",
+    "tilting": "Tilting (3.9.1 / A.5.1)",
+    "warm_up": "Warm-up time (A.5.2)",
+    "span_stability": "Span stability (B.4)",
+    "endurance": "Endurance (A.6)",
+    "emc_disturbances": "EMC disturbances (B.3.x)",
 }
 
 
@@ -59,6 +83,9 @@ class ReportData:
     tested_by: str = ""
     approved_by: str = ""
     template_version: str = "r76-2-v1"
+    # R 76-2 sheet 17 (checklist): rendered as PASSED/FAILED/NA + remarks.
+    checklist: list[dict[str, str]] = field(default_factory=list)
+    checklist_progress: dict[str, int] = field(default_factory=dict)
 
     def test_rows(self, test_type: str) -> list[dict[str, str]]:
         """Rows for one test section in render order."""
@@ -91,7 +118,13 @@ def aggregate_session(db: OrmSession, session_id: uuid.UUID) -> ReportData:
     e = Decimal(str(instrument.verification_scale_interval))
 
     # --- ambient conditions -------------------------------------------
+    mode_label = (
+        "Initial verification (MPE = Table 6, 1×)"
+        if session.evaluation_mode is EvaluationMode.INITIAL_VERIFICATION
+        else "In-service re-verification (MPE = 2× Table 6, §3.5.2)"
+    )
     conditions = {
+        "Evaluation regime": mode_label,
         "Start temperature (°C)": _fmt(session.start_temp_c, 2),
         "End temperature (°C)": _fmt(session.end_temp_c, 2),
         "Relative humidity (%)": _fmt(session.humidity_pct, 2),
@@ -106,7 +139,7 @@ def aggregate_session(db: OrmSession, session_id: uuid.UUID) -> ReportData:
     for obs in latest_observations(db, session_id):
         mpe = Decimal(str(obs.mpe_limit))
         ec = Decimal(str(obs.corrected_error))
-        if mpe != 0:
+        if obs.test_type is not ObservationTestType.DISCRIMINATION and mpe != 0:
             ratio = abs(ec) / mpe
             worst_ratio = ratio if worst_ratio is None else max(worst_ratio, ratio)
 
@@ -159,9 +192,35 @@ def aggregate_session(db: OrmSession, session_id: uuid.UUID) -> ReportData:
         "worst_utilization": (
             f"{float(worst_ratio):.1%}" if worst_ratio is not None else "—"
         ),
-        "clause": "OIML R 76-1 (2006), §3.5 / §3.6 / §3.9 with Annex A procedures",
+        "clause": (
+            "OIML R 76-1 (2006), §3.5.2 (in-service limits) / §3.6 / §3.9 with Annex A procedures"
+            if session.evaluation_mode is EvaluationMode.IN_SERVICE
+            else "OIML R 76-1 (2006), §3.5.1 / §3.6 / §3.9 with Annex A procedures"
+        ),
         "drift_note": drift_note,
     }
+
+    # --- sheet-17 checklist (latest-wins, official order) ---------------
+    from ..engine.checklist_catalog import CHECKLIST_CATALOG
+    from ..services.checklist_service import checklist_progress, latest_checklist
+
+    cl_rows = latest_checklist(db, session_id)
+    order_index = {
+        (e.clause, e.item_key): i for i, e in enumerate(CHECKLIST_CATALOG)
+    }
+    checklist_out = [
+        {
+            "clause": r.clause,
+            "requirement": r.requirement,
+            "test_procedure": r.test_procedure,
+            "outcome": r.outcome.value,
+            "remarks": r.remarks or "",
+        }
+        for r in sorted(
+            cl_rows,
+            key=lambda r: order_index.get((r.clause, r.item_key), 999),
+        )
+    ]
 
     # --- lab + identities ----------------------------------------------
     creator = db.get(User, session.created_by)
@@ -193,6 +252,8 @@ def aggregate_session(db: OrmSession, session_id: uuid.UUID) -> ReportData:
         session_state=session.status.value,
         observations=observations_out,
         overall=overall,
+        checklist=checklist_out,
+        checklist_progress=checklist_progress(cl_rows),
         lab={
             "name": "Legal Metrology Laboratory (demo)",
             "address": "Demo Lab, Government of India — Legal Metrology Division",

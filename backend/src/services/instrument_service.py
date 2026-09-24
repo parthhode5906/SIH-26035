@@ -61,6 +61,7 @@ def create_instrument(
                 min_capacity=min_capacity,
                 verification_scale_interval=verification_scale_interval,
                 display_interval=display_interval,
+                base_unit=base_unit if base_unit in {"kg", "g"} else "kg",
             )
         )
     except EngineValueError as exc:

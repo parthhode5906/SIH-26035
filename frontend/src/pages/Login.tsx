@@ -26,8 +26,8 @@ export function LoginPage() {
         setError(err.message)
       } else {
         setError(
-          'Cannot reach the API server. Check it is running on ' +
-            'http://localhost:8000, and open this app via http://localhost:5173.',
+          'Cannot reach the API server. Ensure the backend is running on ' +
+            'port 8000 with --host :: (dual-stack), then reload this page.',
         )
       }
     } finally {

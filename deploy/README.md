@@ -60,7 +60,10 @@ means the artifact volume and DB diverged.
 
 ## Known hardening follow-ups
 
-- Run `alembic upgrade head` as part of production rollout; development still uses `create_all()` for convenience.
+- ~~Run `alembic upgrade head` as part of production rollout~~ DONE: the
+  backend container now runs `alembic upgrade head` on every boot
+  (backend.Dockerfile CMD); the migration chain is the production schema
+  path. Development still uses `create_all()` for convenience.
 - Rate-limit `/api/v1/public/verify/*` at the reverse proxy.
 - DB-trigger enforcement of the append-only guarantees on
   `observations` and `audit_log` (application code already never updates

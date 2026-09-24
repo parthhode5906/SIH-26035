@@ -26,6 +26,7 @@ def _spec(case: Dict[str, Any], instruments: Dict[str, Any]) -> ScaleParameters:
         min_capacity=payload["min_capacity"],
         verification_scale_interval=payload["verification_scale_interval"],
         display_interval=payload.get("display_interval") or None,
+        base_unit=payload.get("base_unit", "kg"),
     )
 
 
