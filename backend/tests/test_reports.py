@@ -128,6 +128,7 @@ class TestGenerationAndSeal:
         assert r.status_code == 200
         body = r.json()
         assert "file_path" not in body and "docx_path" not in body
+        assert body["overall_result"] == "FAIL"
         pdf = client.get(
             f"/api/v1/reports/{finalized['report_id']}/download",
             headers=_auth(tokens["tech"]),

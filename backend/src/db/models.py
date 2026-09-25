@@ -60,6 +60,14 @@ class AccuracyClassEnum(str, enum.Enum):
     IIII = "IIII"
 
 
+class TestPlanStatus(str, enum.Enum):
+    """Applicability/disposition for an R-76 test in a session plan."""
+
+    REQUIRED = "required"
+    OPTIONAL = "optional"
+    NOT_APPLICABLE = "not_applicable"
+
+
 class SessionStatus(str, enum.Enum):
     """Test-session lifecycle (architecture.md §4.2)."""
 
@@ -185,6 +193,7 @@ class TestSession(Base):
     creator: Mapped[User] = relationship(back_populates="sessions")
     observations: Mapped[list[Observation]] = relationship(back_populates="session")
     reports: Mapped[list[Report]] = relationship(back_populates="session")
+    test_plan: Mapped[list[TestPlanItem]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
 
 class Observation(Base):
@@ -242,6 +251,23 @@ class Observation(Base):
     )
 
     session: Mapped[TestSession] = relationship(back_populates="observations")
+
+
+class TestPlanItem(Base):
+    """Applicability and completion gate for one R-76 physical test."""
+
+    __tablename__ = "test_plan_items"
+    __table_args__ = (UniqueConstraint("session_id", "test_type", name="uq_test_plan_session_type"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=_new_uuid)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("test_sessions.id"), index=True)
+    test_type: Mapped[ObservationTestType] = mapped_column(Enum(ObservationTestType, native_enum=False, length=32))
+    status: Mapped[TestPlanStatus] = mapped_column(Enum(TestPlanStatus, native_enum=False, length=24))
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    session: Mapped[TestSession] = relationship(back_populates="test_plan")
 
 
 class Report(Base):

@@ -245,7 +245,7 @@ def test_discrimination_pass_at_exactly_d() -> None:
         applied_load="5", indication="5.000", additional_load="0.001",
         second_indication="5.001",
     )
-    result = evaluate(scale, obs)
+    result = evaluate(scale, obs, test_type="discrimination")
     assert result.verdict is Verdict.PASS
     assert result.corrected_error == Decimal("0.001")
     assert result.mpe_limit == Decimal("0.001")
@@ -263,7 +263,7 @@ def test_discrimination_fail_below_d() -> None:
         applied_load="5", indication="5.000", additional_load="0.0005",
         second_indication="5.0005",
     )
-    result = evaluate(scale, obs)
+    result = evaluate(scale, obs, test_type="discrimination")
     assert result.verdict is Verdict.FAIL
 
 
@@ -279,7 +279,7 @@ def test_discrimination_requires_d() -> None:
         applied_load="5", indication="5.000", second_indication="5.001",
     )
     with pytest.raises(EngineValueError, match="display_interval"):
-        evaluate(scale, obs)
+        evaluate(scale, obs, test_type="discrimination")
 
 
 def test_discrimination_d_below_5mg_rejected() -> None:
@@ -307,7 +307,7 @@ def test_discrimination_d_below_5mg_rejected() -> None:
         applied_load="100", indication="100", second_indication="100.0005",
     )
     with pytest.raises(EngineValueError, match="5 mg"):
-        evaluate(fine, obs_g)
+        evaluate(fine, obs_g, test_type="discrimination")
 
 
 def test_discrimination_backwards_indication_rejected() -> None:
@@ -322,7 +322,7 @@ def test_discrimination_backwards_indication_rejected() -> None:
         applied_load="5", indication="5.000", second_indication="4.999",
     )
     with pytest.raises(EngineValueError, match="INCREASE"):
-        evaluate(scale, obs)
+        evaluate(scale, obs, test_type="discrimination")
 
 
 def test_temperature_no_load_fixed_1e_limit() -> None:

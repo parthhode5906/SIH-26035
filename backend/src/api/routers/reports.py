@@ -25,6 +25,7 @@ from ..deps import AnyUser, DbDep, OfficerOnly
 from ...core.config import settings
 from ...db.models import Report, TestSession, User
 from ...services.session_service import SessionStateError, mark_approved
+from ...services.report_result import overall_result
 from ...report import reverify_bytes, regenerate_artifacts
 from ..schemas import ReportArchiveOut, ReportOut, SessionOut
 
@@ -55,13 +56,19 @@ def list_reports(db: DbDep, _user: AnyUser) -> list[ReportArchiveOut]:
             except Exception:
                 db.rollback()
     reports = db.query(Report).order_by(Report.created_at.desc()).all()
-    return [ReportArchiveOut.model_validate(r) for r in reports]
+    return [
+        ReportArchiveOut.model_validate({**r.__dict__, "overall_result": overall_result(db, db.get(TestSession, r.session_id))})
+        for r in reports
+    ]
 
 
 @router.get("/{report_id}", response_model=ReportOut)
 def read_report(report_id: uuid.UUID, db: DbDep, _user: AnyUser) -> ReportOut:
     """Fetch a report record."""
-    return ReportOut.model_validate(_get_report_or_404(db, report_id))
+    report = _get_report_or_404(db, report_id)
+    session = db.get(TestSession, report.session_id)
+    payload = {**report.__dict__, "overall_result": overall_result(db, session)}
+    return ReportOut.model_validate(payload)
 
 
 @router.get("/{report_id}/download")
@@ -119,6 +126,7 @@ def public_verify(report_id: uuid.UUID, db: DbDep) -> dict[str, Any]:
         "signed": report.signed_by is not None,
         "signed_by": signer.full_name if signer else None,
         "signed_at": report.signed_at.isoformat() if report.signed_at else None,
+        "overall_result": overall_result(db, session),
         "verify_base_url": settings.report_verify_base_url,
     }
 

@@ -289,6 +289,7 @@ class ReportArchiveOut(BaseModel):
     signed_at: datetime | None
     template_version: str
     created_at: datetime
+    overall_result: Literal["PASS", "FAIL", "INCOMPLETE"] = "INCOMPLETE"
 
 
 class ReportOut(BaseModel):
@@ -304,3 +305,4 @@ class ReportOut(BaseModel):
     signed_at: datetime | None
     template_version: str
     created_at: datetime
+    overall_result: Literal["PASS", "FAIL", "INCOMPLETE"] = "INCOMPLETE"

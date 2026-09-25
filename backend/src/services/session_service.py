@@ -78,6 +78,10 @@ def create_session(
     db.add(session)
     db.commit()
     db.refresh(session)
+    from .test_plan_service import ensure_plan
+    from .checklist_service import seed_checklist
+    ensure_plan(db, session, created_by)
+    seed_checklist(db, session, entered_by=created_by)
     return session
 
 
@@ -380,6 +384,18 @@ def finalize_session(db: Session, session: TestSession) -> TestSession:
         raise SessionStateError(
             f"only in_progress sessions can finalize (session is {session.status.value})"
         )
+    from .test_plan_service import completion
+    plan = completion(db, session)
+    if not plan["ready"]:
+        missing = ", ".join(plan["missing_required"]) or "test plan not initialized"
+        raise SessionStateError(f"evaluation incomplete; required tests without observations: {missing}")
+    from .checklist_service import latest_checklist, checklist_progress
+    checklist = latest_checklist(db, session.id)
+    if not checklist:
+        raise SessionStateError("evaluation incomplete; R-76 checklist has not been seeded")
+    cp = checklist_progress(checklist)
+    if cp["open"] > 0:
+        raise SessionStateError(f"evaluation incomplete; checklist has {cp['open']} unchecked item(s)")
     session.status = SessionStatus.COMPLETED
     session.completed_at = datetime.now(timezone.utc)
     db.commit()

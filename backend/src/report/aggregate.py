@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session as OrmSession
 
 from ..db.models import Instrument, Observation, ObservationTestType, Report, TestSession, User
 from ..engine import EvaluationMode
+from ..engine.ruleset import RULESET_VERSION
 from ..services.instrument_service import drift_watchdog
 from ..services.session_service import latest_observations
 
@@ -183,15 +184,14 @@ def aggregate_session(db: OrmSession, session_id: uuid.UUID) -> ReportData:
             ),
         }.get(level, level)
     overall = {
-        "result": "FAIL"
-        if verdict_counts["FAIL"] or (drift is not None and drift["level"] == "red")
-        else "PASS",
+        "result": "PASS",
         "pass_count": verdict_counts["PASS"],
         "fail_count": verdict_counts["FAIL"],
         "total": verdict_counts["PASS"] + verdict_counts["FAIL"],
         "worst_utilization": (
             f"{float(worst_ratio):.1%}" if worst_ratio is not None else "—"
         ),
+        "ruleset_version": RULESET_VERSION,
         "clause": (
             "OIML R 76-1 (2006), §3.5.2 (in-service limits) / §3.6 / §3.9 with Annex A procedures"
             if session.evaluation_mode is EvaluationMode.IN_SERVICE
@@ -205,6 +205,8 @@ def aggregate_session(db: OrmSession, session_id: uuid.UUID) -> ReportData:
     from ..services.checklist_service import checklist_progress, latest_checklist
 
     cl_rows = latest_checklist(db, session_id)
+    if verdict_counts["FAIL"] or any(r.outcome.value == "FAILED" for r in cl_rows) or (drift is not None and drift["level"] == "red"):
+        overall["result"] = "FAIL"
     order_index = {
         (e.clause, e.item_key): i for i, e in enumerate(CHECKLIST_CATALOG)
     }

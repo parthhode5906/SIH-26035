@@ -129,6 +129,8 @@ def submit_checklist_item(
         )
     entry = _entry(clause, item_key)
     outcome_enum = ChecklistOutcome(outcome)
+    if entry.mandatory and outcome_enum is ChecklistOutcome.NOT_APPLICABLE:
+        raise ChecklistStateError("mandatory checklist items cannot be marked not applicable")
 
     current = [
         r

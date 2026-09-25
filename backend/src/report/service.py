@@ -49,6 +49,8 @@ def content_digest(data: ReportData) -> str:
         "tested_by": data.tested_by,
         "approved_by": data.approved_by,
         "session_state": data.session_state,
+        "checklist": data.checklist,
+        "checklist_progress": data.checklist_progress,
     }
     blob = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return sha256_hex(blob.encode("utf-8"))
