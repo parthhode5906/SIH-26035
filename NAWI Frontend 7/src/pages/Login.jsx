@@ -12,8 +12,8 @@ const features = [
 
 export function Login() {
   const [signingIn, setSigningIn] = useState(false);
-  const [email, setEmail] = useState('technician@nawi.local');
-  const [password, setPassword] = useState('nawi-demo');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
   const continueLocally = () => {
@@ -59,11 +59,6 @@ export function Login() {
 
         <img className="login-machine" src={machineBg} alt="Non-automatic weighing instrument" />
 
-        <div className="login-footer-left">
-          <span>OIML R-76 / R 76-2:2007</span>
-          <span className="login-footer-rule" />
-          <span>SIH 26035 · Legal Metrology Lab</span>
-        </div>
       </section>
 
       <section className="login-form-side">

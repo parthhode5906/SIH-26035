@@ -53,6 +53,11 @@ def create_instrument(
     Raises:
         InstrumentValidationError: class-rule failure (auditor-readable).
     """
+    existing = db.scalar(select(Instrument).where(Instrument.serial_number == serial_number.strip()))
+    if existing is not None:
+        raise InstrumentValidationError(
+            f"An instrument with serial number {serial_number.strip()} is already registered."
+        )
     try:
         validate_instrument_spec(
             ScaleParameters(

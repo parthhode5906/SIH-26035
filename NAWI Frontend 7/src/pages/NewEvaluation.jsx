@@ -5,7 +5,7 @@ import SectionHeader from '@/components/SectionHeader';
 import Button from '@/components/Button';
 import { saveWorkingSession, queueOutbox } from '@/lib/offlineStore';
 import { TEST_MODULES } from '@/lib/requirements';
-import { calculateMinCapacity } from '@/lib/metrology';
+import { calculateMinCapacity, convertValue } from '@/lib/metrology';
 import { api } from '@/api/client';
 
 const cleanNumber = (value) => String(value ?? '').replaceAll(',', '').trim();
@@ -23,6 +23,10 @@ export function NewEvaluation() {
   const [displayInterval, setDisplayInterval] = useState('1');
   const [minCapacity, setMinCapacity] = useState(() => calculateMinCapacity('III', '1', '1', 'g'));
   const [capacity, setCapacity] = useState('6200');
+  const [instrumentQuery, setInstrumentQuery] = useState('');
+  const [instrumentMatches, setInstrumentMatches] = useState([]);
+  const [selectedInstrument, setSelectedInstrument] = useState(null);
+  const [registerNew, setRegisterNew] = useState(false);
 
   // Evaluation configuration
   const [evaluationMode, setEvaluationMode] = useState('initial_verification');
@@ -38,6 +42,39 @@ export function NewEvaluation() {
 
   // Dynamically update default min_capacity when accuracyClass, e, or d changes if user hasn't explicitly entered a custom value
   const calculatedFloor = calculateMinCapacity(accuracyClass, verificationScaleInterval, displayInterval, unit);
+
+  const searchRegistry = async () => {
+    try {
+      const result = await api.instruments(instrumentQuery.trim());
+      setInstrumentMatches(result.items || []);
+      setValidationError('');
+    } catch (err) {
+      setValidationError(err.message || 'Unable to search the instrument registry.');
+    }
+  };
+
+  const selectInstrument = (instrument) => {
+    setSelectedInstrument(instrument);
+    setRegisterNew(false);
+    setManufacturer(instrument.manufacturer);
+    setModel(instrument.model);
+    setSerial(instrument.serial_number);
+    setAccuracyClass(instrument.accuracy_class);
+    setUnit(instrument.base_unit);
+    setCapacity(String(instrument.max_capacity));
+    setMinCapacity(String(instrument.min_capacity));
+    setVerificationScaleInterval(String(instrument.verification_scale_interval));
+    setDisplayInterval(String(instrument.display_interval || instrument.verification_scale_interval));
+  };
+
+  const handleUnitChange = (nextUnit) => {
+    if (nextUnit === unit) return;
+    setCapacity(convertValue(capacity, unit, nextUnit));
+    setMinCapacity(convertValue(minCapacity, unit, nextUnit));
+    setVerificationScaleInterval(convertValue(verificationScaleInterval, unit, nextUnit));
+    setDisplayInterval(convertValue(displayInterval, unit, nextUnit));
+    setUnit(nextUnit);
+  };
 
   const handleClassChange = (newClass) => {
     setAccuracyClass(newClass);
@@ -72,6 +109,9 @@ export function NewEvaluation() {
       return `Minimum capacity must be greater than 0 (Regulatory minimum for Class ${accuracyClass} is ${calculatedFloor} ${unit}).`;
     }
 
+    if (minCapNum < Number(calculatedFloor)) {
+      return `Minimum capacity cannot be below the regulatory minimum of ${calculatedFloor} ${unit}.`;
+    }
     if (minCapNum > maxCapNum) {
       return 'Minimum capacity cannot exceed maximum capacity.';
     }
@@ -160,10 +200,11 @@ export function NewEvaluation() {
 
     try {
       // Find or register instrument
-      const existingRes = await api.instruments(serial.trim());
-      const instrumentList = existingRes.items || [];
-      const existing = instrumentList.find((item) => item.serial_number === serial.trim());
-      const instrument = existing || (await api.createInstrument(instrumentPayload));
+      const instrument = selectedInstrument || (registerNew ? await api.createInstrument(instrumentPayload) : null);
+      if (!instrument) {
+        setValidationError('Select a registered instrument or choose Register New Instrument before continuing.');
+        return;
+      }
 
       // Create session on server
       const serverSession = await api.createSession({
@@ -233,22 +274,33 @@ export function NewEvaluation() {
           <div className="eyebrow">Instrument profile</div>
           <h2 className="mt-2 text-lg font-semibold">What are you testing?</h2>
 
+          <div className="mt-5 rounded-lg border border-[#d7e0db] bg-[#fbfdfb] p-4">
+            <div className="eyebrow">Registry-first identification</div>
+            <div className="mt-3 flex gap-2">
+              <input value={instrumentQuery} onChange={(e) => setInstrumentQuery(e.target.value)} placeholder="Search serial number or instrument ID" className="min-w-0 flex-1 rounded-md border border-[#c9d9d1] bg-white px-3 py-2.5 text-sm" data-testid="input-search-instrument" />
+              <Button size="sm" variant="quiet" onClick={() => void searchRegistry()}><Search size={14} /> Search</Button>
+            </div>
+            {instrumentMatches.length > 0 && <div className="mt-3 space-y-2">{instrumentMatches.map((item) => <button key={item.id} type="button" onClick={() => selectInstrument(item)} className="w-full rounded-md border border-[#c9d9d1] bg-white p-3 text-left text-xs hover:border-[#2e7568]"><strong>{item.manufacturer} {item.model}</strong><span className="mt-1 block font-mono text-[#66837d]">SN {item.serial_number} · Class {item.accuracy_class} · Max {item.max_capacity} {item.base_unit} · Min {item.min_capacity} {item.base_unit}</span></button>)}</div>}
+            {!selectedInstrument && instrumentQuery && !instrumentMatches.length && <div className="mt-3 text-xs text-[#66837d]">No registered instrument found. <button type="button" className="font-semibold text-[#2e7568] underline" onClick={() => setRegisterNew(true)}>Register new instrument</button></div>}
+            {selectedInstrument && <div className="mt-3 flex items-center justify-between text-xs text-[#2e7568]"><span>Instrument selected: {selectedInstrument.serial_number}</span><button type="button" className="underline" onClick={() => setSelectedInstrument(null)}>Change</button></div>}
+          </div>
+
           <div className="mt-6 grid gap-5 sm:grid-cols-2">
             <label>
               <span className="mb-2 block text-xs font-semibold text-[#33545a]">Manufacturer</span>
-              <input value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} className="w-full rounded-md border border-[#c9d9d1] bg-[#fbfdfb] px-3 py-3 text-sm text-[#17333c] outline-none transition focus:border-[#c69852]" data-testid="input-manufacturer" />
+              <input value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} disabled={!!selectedInstrument} className="w-full rounded-md border border-[#c9d9d1] bg-[#fbfdfb] px-3 py-3 text-sm text-[#17333c] outline-none transition focus:border-[#c69852] disabled:bg-[#edf4ef]" data-testid="input-manufacturer" />
             </label>
             <label>
               <span className="mb-2 block text-xs font-semibold text-[#33545a]">Model</span>
               <div className="relative">
                 <Search className="absolute left-3 top-3.5 text-[#7b9690]" size={16} />
-                <input value={model} onChange={(e) => setModel(e.target.value)} className="w-full rounded-md border border-[#c9d9d1] bg-[#fbfdfb] py-3 pl-10 pr-3 text-sm text-[#17333c] outline-none transition focus:border-[#c69852]" data-testid="input-model" />
+                <input value={model} onChange={(e) => setModel(e.target.value)} disabled={!!selectedInstrument} className="w-full rounded-md border border-[#c9d9d1] bg-[#fbfdfb] py-3 pl-10 pr-3 text-sm text-[#17333c] outline-none transition focus:border-[#c69852] disabled:bg-[#edf4ef]" data-testid="input-model" />
               </div>
             </label>
 
             <label>
               <span className="mb-2 block text-xs font-semibold text-[#33545a]">Serial number</span>
-              <input value={serial} onChange={(e) => setSerial(e.target.value)} className="w-full rounded-md border border-[#c9d9d1] bg-[#fbfdfb] px-3 py-3 font-mono text-sm outline-none transition focus:border-[#c69852]" data-testid="input-serial" />
+              <input value={serial} onChange={(e) => setSerial(e.target.value)} disabled={!!selectedInstrument} className="w-full rounded-md border border-[#c9d9d1] bg-[#fbfdfb] px-3 py-3 font-mono text-sm outline-none transition focus:border-[#c69852] disabled:bg-[#edf4ef]" data-testid="input-serial" />
             </label>
 
             <label>
@@ -257,7 +309,7 @@ export function NewEvaluation() {
               </span>
               <select
                 value={accuracyClass}
-                onChange={(e) => handleClassChange(e.target.value)}
+                onChange={(e) => handleClassChange(e.target.value)} disabled={!!selectedInstrument}
                 className="w-full rounded-md border border-[#c9d9d1] bg-[#fbfdfb] px-3 py-3 text-sm font-semibold text-[#33545a] outline-none focus:border-[#c69852]"
                 data-testid="select-accuracy-class"
               >
@@ -276,7 +328,7 @@ export function NewEvaluation() {
                   min="0.0001"
                   step="any"
                   value={verificationScaleInterval}
-                  onChange={(e) => handleIntervalChange(e.target.value)}
+                  onChange={(e) => handleIntervalChange(e.target.value)} disabled={!!selectedInstrument}
                   className="min-w-0 flex-1 rounded-l-md border border-r-0 border-[#c9d9d1] bg-[#fbfdfb] px-3 py-3 font-mono text-sm outline-none focus:border-[#c69852]"
                   data-testid="input-verification-interval"
                 />
@@ -292,7 +344,7 @@ export function NewEvaluation() {
                   min="0.0001"
                   step="any"
                   value={displayInterval}
-                  onChange={(e) => handleDisplayIntervalChange(e.target.value)}
+                  onChange={(e) => handleDisplayIntervalChange(e.target.value)} disabled={!!selectedInstrument}
                   className="min-w-0 flex-1 rounded-l-md border border-r-0 border-[#c9d9d1] bg-[#fbfdfb] px-3 py-3 font-mono text-sm outline-none focus:border-[#c69852]"
                   data-testid="input-display-interval"
                 />
@@ -312,8 +364,8 @@ export function NewEvaluation() {
                   type="number"
                   step="any"
                   value={minCapacity}
-                  onChange={(e) => setMinCapacity(e.target.value)}
-                  className="min-w-0 flex-1 rounded-l-md border border-r-0 border-[#c9d9d1] bg-[#fbfdfb] px-3 py-3 font-mono text-sm outline-none focus:border-[#c69852]"
+                  readOnly
+                  className="min-w-0 flex-1 rounded-l-md border border-r-0 border-[#c9d9d1] bg-[#edf4ef] px-3 py-3 font-mono text-sm outline-none"
                   data-testid="input-min-capacity"
                 />
                 <span className="grid place-items-center rounded-r-md border border-[#c9d9d1] bg-[#edf4ef] px-3 font-mono text-xs text-[#66837d]">{unit}</span>
@@ -327,19 +379,18 @@ export function NewEvaluation() {
                   type="number"
                   step="any"
                   value={capacity}
-                  onChange={(e) => setCapacity(e.target.value)}
+                  onChange={(e) => setCapacity(e.target.value)} disabled={!!selectedInstrument}
                   className="min-w-0 flex-1 rounded-l-md border border-r-0 border-[#c9d9d1] bg-[#fbfdfb] px-3 py-3 font-mono text-sm outline-none focus:border-[#c69852]"
                   data-testid="input-capacity"
                 />
                 <select
                   value={unit}
-                  onChange={(e) => setUnit(e.target.value)}
+                  onChange={(e) => handleUnitChange(e.target.value)} disabled={!!selectedInstrument}
                   className="rounded-r-md border border-[#c9d9d1] bg-[#edf4ef] px-3 text-sm font-semibold text-[#33545a] outline-none"
                   data-testid="select-unit"
                 >
                   <option value="g">g</option>
                   <option value="kg">kg</option>
-                  <option value="mg">mg</option>
                 </select>
               </div>
             </label>

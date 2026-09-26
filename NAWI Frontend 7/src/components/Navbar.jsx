@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { clearTokens } from '@/api/client';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { AUDIT_ROLES, REGISTRY_ROLES, hasRole } from '@/lib/roles';
+import { AUDIT_ROLES, REGISTRY_ROLES, TECHNICIAN_ROLES, hasRole } from '@/lib/roles';
 import { NawiBrand } from '@/components/NawiBrand';
 
 const baseNavItems = [
@@ -48,9 +48,13 @@ export function Navbar({ mobileOpen, onCloseMobile, onOpenHelp }) {
     : '—';
   const canSeeAudit = hasRole(user, AUDIT_ROLES);
   const canSeeRegistry = hasRole(user, REGISTRY_ROLES);
+  const canCreateEvaluation = hasRole(user, TECHNICIAN_ROLES);
+  const visibleBaseItems = canCreateEvaluation
+    ? baseNavItems
+    : baseNavItems.filter((item) => item.href !== '/evaluations/new');
   const navItems = canSeeRegistry
-    ? [...baseNavItems.slice(0, 3), registryNavItem, ...baseNavItems.slice(3)]
-    : baseNavItems;
+    ? [...visibleBaseItems.slice(0, 3), registryNavItem, ...visibleBaseItems.slice(3)]
+    : visibleBaseItems;
 
   const handleLogout = () => {
     clearTokens();

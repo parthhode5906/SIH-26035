@@ -90,14 +90,15 @@ export default function R76ProcedureModule({ testType, module, session = {}, row
   const [indication, setIndication] = useState('');
   const [additional, setAdditional] = useState('0');
 
-  const nextPosition = null;
+  const contextPositions = config.contexts.map((_, index) => String(index + 1));
+  const position = String(Math.min(rows.length + 1, contextPositions.length));
   const capturedForContext = rows.length;
 
 
   const capture = () => {
     if (!indication.trim() || Number.isNaN(Number(indication))) return;
     onAdd({
-      position: null,
+      position,
       applied_load: applied || '0',
       indication,
       additional_load: additional || '0',
@@ -138,7 +139,7 @@ export default function R76ProcedureModule({ testType, module, session = {}, row
         </div>
         <div className="mt-4 flex items-center justify-between text-[11px] text-[#7b9690]">
           <span>e = {session.verificationScaleInterval || session.verification_scale_interval || '—'} {unit}</span>
-          <span>{capturedForContext} captured for this test</span>
+          <span>Position {position} · {capturedForContext} captured for this test</span>
         </div>
         <div className="mt-5 flex justify-end">
           <button type="button" onClick={capture} disabled={!indication.trim()} className="button-brass inline-flex items-center gap-2 rounded-md px-4 py-2.5 text-xs font-bold">
@@ -154,7 +155,7 @@ export default function R76ProcedureModule({ testType, module, session = {}, row
             {rows.map((row, index) => (
               <div key={row.id || `${row.test_type}-${row.sequence_no}-${index}`} className="flex flex-col gap-2 p-4 text-xs md:flex-row md:items-center md:justify-between">
                 <div>
-                  <div className="font-semibold text-[#17333c]">{row.position || 'Test condition'} · Load {row.applied_load} {unit} · Indication {row.indication} {unit}</div>
+                  <div className="font-semibold text-[#17333c]">{row.position ? `${config.contexts[Number(row.position) - 1] || `Position ${row.position}`} · Position ${row.position}` : 'Test condition'} · Load {row.applied_load} {unit} · Indication {row.indication} {unit}</div>
                   <div className="mt-1 font-mono text-[10px] text-[#66837d]">Sequence #{row.sequence_no ?? index} · Error {row.corrected_error ?? '—'} · MPE {row.mpe_limit ?? '—'}</div>
                 </div>
                 <span className={`inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 font-mono text-[10px] font-bold ${row.verdict === 'PASS' ? 'bg-[#dceee8] text-[#2e7568]' : row.verdict === 'FAIL' ? 'bg-[#fdeceb] text-[#b24b43]' : 'bg-[#f4f7f3] text-[#66837d]'}`}>

@@ -13,6 +13,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import Button from '@/components/Button';
+import { TEST_MODULES, labelForTestType, moduleStatus } from '@/lib/requirements';
 
 export function VerdictModule({
   session = {},
@@ -23,10 +24,11 @@ export function VerdictModule({
   onFinalize,
   finalizing = false,
   finalizeError = '',
+  canFinalize = true,
 }) {
-  const obsTypes = new Set(observations.map((o) => o.test_type));
-  const requiredPlanItems = testPlanItems.filter((p) => p.status === 'required');
-  const missingRequired = requiredPlanItems.filter((p) => !obsTypes.has(p.test_type));
+  const planMap = new Map(testPlanItems.map((p) => [p.test_type, p]));
+  const requiredPlanItems = TEST_MODULES.filter((module) => (planMap.get(module.testType)?.status || (module.core ? 'required' : 'optional')) === 'required');
+  const missingRequired = requiredPlanItems.filter((module) => !moduleStatus(module, observations, planMap.get(module.testType)).complete);
   const requiredTestsComplete = requiredPlanItems.length > 0 && missingRequired.length === 0;
 
   const checklistProgress = checklist.progress || {};
@@ -34,8 +36,10 @@ export function VerdictModule({
   const checklistTotal = checklistProgress.total ?? (checklist.items || []).length;
   const checklistComplete = checklistTotal > 0 && checklistOpenCount === 0;
 
-  const envStartPresent = !!(session.start_temp_c ?? session.envValues?.start_temp_c);
-  const envEndPresent = !!(session.end_temp_c ?? session.envValues?.end_temp_c);
+  const envStartPresent = session.start_temp_c !== null && session.start_temp_c !== undefined && session.start_temp_c !== ''
+    || !!session.envValues?.start_temp_c;
+  const envEndPresent = session.end_temp_c !== null && session.end_temp_c !== undefined && session.end_temp_c !== ''
+    || !!session.envValues?.end_temp_c;
   const envComplete = envStartPresent && envEndPresent;
 
   const failedObs = observations.filter((o) => o.verdict === 'FAIL');
@@ -163,8 +167,8 @@ export function VerdictModule({
                 <span className="font-bold text-[#17333c]">Required Test Modules</span>
                 <div className="text-[11px] text-[#66837d]">
                   {requiredTestsComplete
-                    ? `All ${requiredPlanItems.length} required test modules have recorded observations.`
-                    : `${missingRequired.length} required tests missing readings: ${missingRequired.map((m) => m.test_type).join(', ')}`}
+                    ? `All ${requiredPlanItems.length} required test modules are complete.`
+                    : `${missingRequired.length} required tests incomplete: ${missingRequired.map((m) => labelForTestType(m.testType)).join(', ')}`}
                 </div>
               </div>
             </div>
@@ -236,7 +240,7 @@ export function VerdictModule({
           </div>
           <Button
             onClick={onFinalize}
-            disabled={finalizing || isFinalized}
+            disabled={finalizing || isFinalized || !canFinalize || overallVerdict === 'INCOMPLETE'}
             data-testid="button-finalize-session"
           >
             {finalizing ? (
@@ -245,6 +249,10 @@ export function VerdictModule({
               </>
             ) : isFinalized ? (
               'Session Finalized'
+            ) : !canFinalize ? (
+              'Approving officers cannot finalize evaluations'
+            ) : overallVerdict === 'INCOMPLETE' ? (
+              'Complete required checks before finalizing'
             ) : (
               <>
                 <FileCheck2 size={15} className="mr-1.5 inline" /> Finalize Evaluation &amp; View Report

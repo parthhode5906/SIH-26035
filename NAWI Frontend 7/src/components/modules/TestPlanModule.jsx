@@ -14,6 +14,7 @@ export function TestPlanModule({
   const [selectedType, setSelectedType] = useState(null);
   const [statusVal, setStatusVal] = useState('required');
   const [rationale, setRationale] = useState('');
+  const [validationError, setValidationError] = useState('');
 
   const planMap = new Map((testPlanItems || []).map((p) => [p.test_type, p]));
   const obsTypes = new Set((observations || []).map((o) => o.test_type));
@@ -23,10 +24,15 @@ export function TestPlanModule({
     setSelectedType(module.testType);
     setStatusVal(existing?.status || 'required');
     setRationale(existing?.rationale || '');
+    setValidationError('');
   };
 
   const handleSave = async () => {
     if (!selectedType) return;
+    if (statusVal === 'not_applicable' && !rationale.trim()) {
+      setValidationError('A rationale is required when a test is marked not applicable.');
+      return;
+    }
     await onUpdateStatus(selectedType, statusVal, rationale.trim() || null);
     setSelectedType(null);
   };
@@ -116,6 +122,7 @@ export function TestPlanModule({
               Save Plan Item
             </Button>
           </div>
+          {validationError && <div className="mt-3 text-xs text-[#a6423b]">{validationError}</div>}
         </div>
       )}
 
@@ -136,7 +143,7 @@ export function TestPlanModule({
             <tbody className="divide-y divide-[#e5ece8]">
               {TEST_MODULES.map((m, index) => {
                 const planItem = planMap.get(m.testType);
-                const currentStatus = planItem?.status || 'not_applicable';
+                const currentStatus = planItem?.status || (m.core ? 'required' : 'optional');
                 const hasObs = obsTypes.has(m.testType);
 
                 let badgeColor = 'bg-[#edf4ef] text-[#2e7568]';

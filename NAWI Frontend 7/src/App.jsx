@@ -23,7 +23,7 @@ import Registry from '@/pages/Registry';
 import Admin from '@/pages/Admin';
 import { syncOutbox } from '@/lib/sync';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { AUDIT_ROLES, REGISTRY_ROLES, hasRole } from '@/lib/roles';
+import { AUDIT_ROLES, REGISTRY_ROLES, TECHNICIAN_ROLES, hasRole } from '@/lib/roles';
 import { ShieldOff } from 'lucide-react';
 
 const queryClient = new QueryClient();
@@ -80,7 +80,16 @@ function AppRoutes() {
       <Route path="/" component={Landing} />
       <Route path="/dashboard" component={() => <Shell><Home /></Shell>} />
       <Route path="/about" component={() => <Shell><About /></Shell>} />
-      <Route path="/evaluations/new" component={() => <Shell><NewEvaluation /></Shell>} />
+      <Route
+        path="/evaluations/new"
+        component={() => (
+          <Shell>
+            <RequireRole roles={TECHNICIAN_ROLES}>
+              <NewEvaluation />
+            </RequireRole>
+          </Shell>
+        )}
+      />
       <Route path="/sessions/active" component={() => <Shell><ActiveSession /></Shell>} />
       <Route path="/reports" component={() => <Shell><Reports /></Shell>} />
       <Route path="/reports/:id">{(params) => <Shell><ReportView id={params.id} /></Shell>}</Route>

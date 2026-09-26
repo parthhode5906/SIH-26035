@@ -286,6 +286,7 @@ class ReportArchiveOut(BaseModel):
     sha256: str
     qr_payload: str
     signed_by: uuid.UUID | None
+    signed_by_name: str | None = None
     signed_at: datetime | None
     template_version: str
     created_at: datetime
@@ -302,6 +303,7 @@ class ReportOut(BaseModel):
     sha256: str
     qr_payload: str
     signed_by: uuid.UUID | None
+    signed_by_name: str | None = None
     signed_at: datetime | None
     template_version: str
     created_at: datetime

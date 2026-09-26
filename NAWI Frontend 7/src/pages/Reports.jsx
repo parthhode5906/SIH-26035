@@ -170,7 +170,7 @@ export function Reports() {
                     {report.signed_by ? (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-[#dceee8] px-2.5 py-1 text-[10px] font-semibold text-[#2e7568]">
                         <CheckCircle2 size={12} />
-                        Approved
+                        {report.signed_by_name || 'Approved'}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf4ef] px-2.5 py-1 text-[10px] font-medium text-[#66837d]">

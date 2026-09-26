@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..db.models import ObservationTestType, TestPlanItem, TestPlanStatus, TestSession
+from ..db.models import ObservationTestType, SessionStatus, TestPlanItem, TestPlanStatus, TestSession
 
 CORE_REQUIRED = {
     ObservationTestType.WEIGHING_PERFORMANCE,
@@ -33,6 +33,10 @@ def list_plan(db: Session, session_id: uuid.UUID) -> list[TestPlanItem]:
     return db.scalars(select(TestPlanItem).where(TestPlanItem.session_id == session_id).order_by(TestPlanItem.test_type)).all()
 
 def set_status(db: Session, session: TestSession, *, test_type: str, status: str, rationale: str | None, user_id: uuid.UUID) -> TestPlanItem:
+    if session.status in {SessionStatus.COMPLETED, SessionStatus.APPROVED}:
+        raise TestPlanStateError("finalized evaluations cannot modify the test plan")
+    if status == TestPlanStatus.NOT_APPLICABLE.value and not (rationale or "").strip():
+        raise TestPlanStateError("a rationale is required when a test is not applicable")
     row = db.scalar(select(TestPlanItem).where(TestPlanItem.session_id == session.id, TestPlanItem.test_type == ObservationTestType(test_type)))
     if row is None:
         raise TestPlanStateError("test plan has not been initialized")

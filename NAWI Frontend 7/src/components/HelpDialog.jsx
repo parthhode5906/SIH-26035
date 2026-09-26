@@ -27,21 +27,20 @@ export function HelpDialog({ onClose }) {
           </button>
         </div>
         <p className="mt-4 text-sm leading-6 text-[#58746f]">
-          NAWI keeps the working record on this device first. Capture each observation in sequence,
-          review the tolerance trace, then seal the report for an approving officer.
+            Follow the controlled workflow from registry selection through measurement, validation, finalization, and officer approval.
         </p>
         <div className="mt-5 space-y-3 border-t border-[#d7e0db] pt-4 text-xs text-[#33545a]">
           <div className="flex gap-3">
             <span className="font-mono text-[#c69852]">01</span>
-            <span>Use the active session to move through each test module.</span>
+            <span><strong>Identify.</strong> Select a registered instrument first, or register it once before creating an evaluation.</span>
           </div>
           <div className="flex gap-3">
             <span className="font-mono text-[#c69852]">02</span>
-            <span>Every reading is timestamped and retained locally in IndexedDB.</span>
+            <span><strong>Set scope and measure.</strong> Use the instrument base unit, complete applicable tests, and provide a reason for every N/A decision.</span>
           </div>
           <div className="flex gap-3">
             <span className="font-mono text-[#c69852]">03</span>
-            <span>Reports can be verified after integrity data is recorded.</span>
+            <span><strong>Validate and seal.</strong> Resolve required evidence and the checklist before finalizing. Pending changes show in the connectivity status; officer approval follows finalization.</span>
           </div>
         </div>
         <button

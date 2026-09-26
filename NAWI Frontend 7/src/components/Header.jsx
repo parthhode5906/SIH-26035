@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, CircleHelp, Menu } from 'lucide-react';
+import { CircleHelp, Menu } from 'lucide-react';
 import ConnectivityPill from '@/components/ConnectivityPill';
 
 export function Header({ onOpenMobileNav, onOpenHelp }) {
@@ -14,14 +14,6 @@ export function Header({ onOpenMobileNav, onOpenHelp }) {
         >
           <Menu size={20} />
         </button>
-        <div className="hidden items-center gap-2 font-mono text-[10px] uppercase tracking-[.14em] text-[#6d8984] md:flex">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#2e7568]" />
-          Legal Metrology Lab <ChevronRight size={12} /> SIH 26035
-        </div>
-        <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[.12em] text-[#6d8984] md:hidden">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#2e7568]" />
-          SIH 26035
-        </div>
       </div>
       <div className="flex items-center gap-3">
         <button

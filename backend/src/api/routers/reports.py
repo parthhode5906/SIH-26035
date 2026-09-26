@@ -57,7 +57,11 @@ def list_reports(db: DbDep, _user: AnyUser) -> list[ReportArchiveOut]:
                 db.rollback()
     reports = db.query(Report).order_by(Report.created_at.desc()).all()
     return [
-        ReportArchiveOut.model_validate({**r.__dict__, "overall_result": overall_result(db, db.get(TestSession, r.session_id))})
+        ReportArchiveOut.model_validate({
+            **r.__dict__,
+            "signed_by_name": db.get(User, r.signed_by).full_name if r.signed_by and db.get(User, r.signed_by) else None,
+            "overall_result": overall_result(db, db.get(TestSession, r.session_id)),
+        })
         for r in reports
     ]
 
@@ -67,7 +71,12 @@ def read_report(report_id: uuid.UUID, db: DbDep, _user: AnyUser) -> ReportOut:
     """Fetch a report record."""
     report = _get_report_or_404(db, report_id)
     session = db.get(TestSession, report.session_id)
-    payload = {**report.__dict__, "overall_result": overall_result(db, session)}
+    signer = db.get(User, report.signed_by) if report.signed_by else None
+    payload = {
+        **report.__dict__,
+        "signed_by_name": signer.full_name if signer else None,
+        "overall_result": overall_result(db, session),
+    }
     return ReportOut.model_validate(payload)
 
 

@@ -4,6 +4,7 @@ import { ArrowLeft, Download, ShieldCheck, FileText, Loader2 } from 'lucide-reac
 import Button from '@/components/Button';
 import SectionHeader from '@/components/SectionHeader';
 import { api, downloadFile } from '@/api/client';
+import { labelForTestType } from '@/lib/requirements';
 
 export default function ReportView({ id }) {
   const [, setLocation] = useLocation();
@@ -74,7 +75,7 @@ export default function ReportView({ id }) {
             <div className="rounded-lg border border-[#d7e0db] overflow-hidden bg-white">
               {observations.length === 0 ? <div className="p-5 text-sm text-[#66837d]">No observations returned.</div> : observations.map((o, i) => (
                 <div key={o.id || `${o.test_type}-${o.sequence_no}-${i}`} className="flex items-center justify-between gap-4 border-b last:border-b-0 border-[#e5ece8] p-4 text-xs">
-                  <div><div className="font-semibold text-[#17333c]">{o.test_type}</div><div className="mt-1 font-mono text-[10px] text-[#66837d]">Seq #{o.sequence_no ?? i} · {o.indication ?? '—'}</div></div>
+                  <div><div className="font-semibold text-[#17333c]">{labelForTestType(o.test_type)}</div><div className="mt-1 text-[#66837d]">Position {o.position || '—'} · Load {o.applied_load ?? '—'} · Indication {o.indication ?? '—'} · Error {o.corrected_error ?? '—'} · MPE ±{o.mpe_limit ?? '—'}</div><div className="mt-1 font-mono text-[10px] text-[#9ab0a9]">Seq #{o.sequence_no ?? i} · {o.source || 'manual'} · {o.entered_at ? new Date(o.entered_at).toLocaleString() : '—'}</div></div>
                   <span className={`rounded-full px-2.5 py-1 font-mono text-[10px] font-bold ${o.verdict === 'PASS' ? 'bg-[#dceee8] text-[#2e7568]' : o.verdict === 'FAIL' ? 'bg-[#fdeceb] text-[#b24b43]' : 'bg-[#f4f7f3] text-[#66837d]'}`}>{o.verdict || '—'}</span>
                 </div>
               ))}
@@ -82,7 +83,7 @@ export default function ReportView({ id }) {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Info label="Officer approval" value={report.signed_by || 'Not signed'} />
+            <Info label="Officer approval" value={report.signed_by_name || 'Not signed'} />
             <Info label="Signed at" value={report.signed_at ? new Date(report.signed_at).toLocaleString() : 'Not signed'} />
             <Info label="SHA-256" value={report.sha256} mono />
             <Info label="Report ID" value={report.id} mono />

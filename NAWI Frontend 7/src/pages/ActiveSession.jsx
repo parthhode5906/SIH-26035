@@ -19,12 +19,11 @@ import { TEST_MODULES, moduleStatus, computeTestPlanCompletion } from '@/lib/req
 import { normalizeDrift } from '@/lib/drift';
 import { api } from '@/api/client';
 
-const SCREENS = [
+const WORKFLOW_SCREENS = [
   { kind: 'identification', label: 'Identification' },
   { kind: 'environment', label: 'Environment' },
   { kind: 'test_plan', label: 'Test Plan' },
   { kind: 'checklist', label: 'R-76 Checklist' },
-  ...TEST_MODULES.map((m) => ({ kind: 'test', testType: m.testType, label: m.label })),
   { kind: 'verdict', label: 'Verdict & Finalize' },
 ];
 
@@ -74,7 +73,18 @@ export function ActiveSession() {
   const [driftInfo, setDriftInfo] = useState(null);
   const [driftLoading, setDriftLoading] = useState(false);
 
-  const current = SCREENS[screenIndex];
+  const screens = useMemo(() => {
+    const planMap = new Map(testPlanData.map((item) => [item.test_type, item.status]));
+    const executableTests = TEST_MODULES
+      .filter((module) => (planMap.get(module.testType) || (module.core ? 'required' : 'optional')) !== 'not_applicable')
+      .map((module) => ({ kind: 'test', testType: module.testType, label: module.label }));
+    return [WORKFLOW_SCREENS[0], WORKFLOW_SCREENS[1], WORKFLOW_SCREENS[2], WORKFLOW_SCREENS[3], ...executableTests, WORKFLOW_SCREENS[4]];
+  }, [testPlanData]);
+  const current = screens[screenIndex] || screens[0];
+  const currentUser = (() => {
+    try { return JSON.parse(localStorage.getItem('nawi-user') || '{}'); } catch { return {}; }
+  })();
+  const canEdit = currentUser.role !== 'approving_officer';
 
   const hydrateServerState = async (serverSession) => {
     if (!serverSession?.id || isLocalId(serverSession.id)) return;
@@ -279,9 +289,9 @@ export function ActiveSession() {
     setEnvSaveState('');
     // Notice: start_temp_c is NEVER sent in PATCH
     const payload = {
-      end_temp_c: envValues.end_temp_c ? Number(envValues.end_temp_c) : null,
-      humidity_pct: envValues.humidity_pct ? Number(envValues.humidity_pct) : null,
-      pressure_hpa: envValues.pressure_hpa ? Number(envValues.pressure_hpa) : null,
+      end_temp_c: envValues.end_temp_c.trim() ? envValues.end_temp_c.trim() : null,
+      humidity_pct: envValues.humidity_pct.trim() ? envValues.humidity_pct.trim() : null,
+      pressure_hpa: envValues.pressure_hpa.trim() ? envValues.pressure_hpa.trim() : null,
     };
     try {
       if (session.id && !isLocalId(session.id)) {
@@ -379,6 +389,10 @@ export function ActiveSession() {
   };
 
   const handleFinalize = async () => {
+    if (!canEdit) {
+      setFinalizeError('Approving officers may review reports but cannot finalize evaluations.');
+      return;
+    }
     if (!session.id || isLocalId(session.id)) {
       setFinalizeError('Session must be synchronized with the server to finalize.');
       return;
@@ -407,9 +421,29 @@ export function ActiveSession() {
     }
   };
 
-  const goNext = () => setScreenIndex(Math.min(SCREENS.length - 1, screenIndex + 1));
+  const planMap = useMemo(() => new Map(testPlanData.map((item) => [item.test_type, item])), [testPlanData]);
+  const screenComplete = (screen) => {
+    if (!screen) return false;
+    if (screen.kind === 'identification') return Boolean(session.instrument_id || session.instrumentId || session.model);
+    if (screen.kind === 'environment') return Boolean(session.start_temp_c ?? envValues.start_temp_c) && Boolean(session.end_temp_c ?? envValues.end_temp_c);
+    if (screen.kind === 'test_plan') return testPlanData.length > 0;
+    if (screen.kind === 'checklist') {
+      const progress = checklistData.progress || {};
+      return Number(progress.total || checklistData.items?.length || 0) > 0 && Number(progress.open || progress.unchecked || 0) === 0;
+    }
+    if (screen.kind === 'test') {
+      const module = TEST_MODULES.find((item) => item.testType === screen.testType);
+      return moduleStatus(module, observations, planMap.get(screen.testType)).complete;
+    }
+    return completionInfo.ready;
+  };
+  const canOpenScreen = (index) => index <= screenIndex || screens.slice(0, index).every(screenComplete);
+  const goNext = () => {
+    if (!screenComplete(current)) return;
+    setScreenIndex(Math.min(screens.length - 1, screenIndex + 1));
+  };
   const goBack = () => setScreenIndex(Math.max(0, screenIndex - 1));
-  const isLastScreen = screenIndex === SCREENS.length - 1;
+  const isLastScreen = screenIndex === screens.length - 1;
 
   const completionInfo = useMemo(
     () => computeTestPlanCompletion(testPlanData, observations),
@@ -440,7 +474,7 @@ export function ActiveSession() {
           observations={observations}
           onUpdateStatus={handleUpdateTestPlanStatus}
           completionInfo={completionInfo}
-          canEdit={localStorage.getItem('nawi-user') ? JSON.parse(localStorage.getItem('nawi-user')).role !== 'approving_officer' : true}
+          canEdit={canEdit}
         />
       );
     }
@@ -467,6 +501,7 @@ export function ActiveSession() {
           onFinalize={handleFinalize}
           finalizing={finalizing}
           finalizeError={finalizeError}
+          canFinalize={canEdit}
         />
       );
     }
@@ -630,7 +665,7 @@ export function ActiveSession() {
             <FileText size={14} /> Note
           </Button>
           <Button variant="quiet" size="sm" onClick={() => persist()} data-testid="button-save-session">
-            <Save size={14} /> {saved ? 'Saved' : 'Save locally'}
+            <Save size={14} /> {saved ? 'Saved locally' : 'Save draft'}
           </Button>
         </div>
       </div>
@@ -662,16 +697,18 @@ export function ActiveSession() {
         <aside className="panel h-fit max-h-[85vh] overflow-y-auto p-4">
           <div className="eyebrow mb-5 px-2">Evaluation Workflow</div>
           <div>
-            {SCREENS.map((screen, index) => {
+            {screens.map((screen, index) => {
               const active = index === screenIndex;
               const module = screen.kind === 'test' ? TEST_MODULES.find((m) => m.testType === screen.testType) : null;
-              const status = module ? moduleStatus(module, observations) : null;
-              const complete = status ? status.complete : index < screenIndex;
+              const status = module ? moduleStatus(module, observations, planMap.get(module.testType)) : null;
+              const complete = screenComplete(screen);
+              const locked = !canOpenScreen(index);
               return (
                 <button
                   key={screen.label}
-                  onClick={() => setScreenIndex(index)}
-                  className={`module-step flex w-full items-start gap-3 px-2 py-2.5 text-left ${complete ? 'complete' : ''}`}
+                  onClick={() => !locked && setScreenIndex(index)}
+                  disabled={locked}
+                  className={`module-step flex w-full items-start gap-3 px-2 py-2.5 text-left ${complete ? 'complete' : ''} ${locked ? 'cursor-not-allowed opacity-50' : ''}`}
                   data-testid={`button-module-${index + 1}`}
                 >
                   <span
@@ -690,7 +727,7 @@ export function ActiveSession() {
                       {screen.label}
                     </span>
                     <span className="mt-1 block font-mono text-[9px] text-[#9ab0a9]">
-                      {status ? `${status.have}/${status.need}` : complete ? 'complete' : active ? 'current' : ''}
+                      {status ? `${status.have}/${status.need}` : complete ? 'COMPLETE' : locked ? 'LOCKED' : active ? 'CURRENT' : ''}
                     </span>
                   </span>
                 </button>
@@ -708,10 +745,18 @@ export function ActiveSession() {
           <div className="flex items-center justify-between border-b border-[#d7e0db] px-5 py-4 md:px-7">
             <div>
               <div className="eyebrow">
-                Screen {String(screenIndex + 1).padStart(2, '0')} / {String(SCREENS.length).padStart(2, '0')}
+                Screen {String(screenIndex + 1).padStart(2, '0')} / {String(screens.length).padStart(2, '0')}
               </div>
               <h2 className="mt-1 text-xl font-semibold">{current.label}</h2>
             </div>
+          </div>
+
+          <div className="border-b border-[#d7e0db] bg-[#fbfdfb] px-5 py-3 md:px-7">
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-[#66837d]">
+              <span>Applicable procedures</span>
+              <span>{completionInfo.applicableCompleted} / {completionInfo.applicableTotal}</span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#d7e0db]"><div className="h-full rounded-full bg-[#2e7568] transition-all" style={{ width: `${completionInfo.applicableProgress}%` }} /></div>
           </div>
 
           <div className="p-5 md:p-7">{renderScreen()}</div>
@@ -728,7 +773,7 @@ export function ActiveSession() {
             </Button>
             <div className="flex items-center gap-3">
               {!isLastScreen ? (
-                <Button size="sm" onClick={goNext} data-testid="button-next-module">
+                <Button size="sm" onClick={goNext} disabled={!screenComplete(current)} data-testid="button-next-module">
                   Continue <ArrowRight size={14} />
                 </Button>
               ) : (

@@ -82,8 +82,9 @@ export default function Registry() {
     }
 
     const minCap = Number(cleanNumber(form.min_capacity));
-    if (!form.min_capacity || Number.isNaN(minCap) || minCap <= 0) {
-      return 'Minimum capacity must be greater than zero.';
+    const floor = Number(calculateMinCapacity(form.accuracy_class, form.verification_scale_interval, form.display_interval, form.base_unit));
+    if (!form.min_capacity || Number.isNaN(minCap) || minCap < floor) {
+      return `Minimum capacity cannot be below the regulatory minimum of ${floor} ${form.base_unit}.`;
     }
 
     if (minCap > maxCap) {
@@ -222,7 +223,6 @@ export default function Registry() {
               >
                 <option value="g">g</option>
                 <option value="kg">kg</option>
-                <option value="mg">mg</option>
               </select>
             </label>
           </div>

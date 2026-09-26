@@ -4,6 +4,7 @@ import ReportSection from '@/components/reports/ReportSection';
 import ReportGrid from '@/components/reports/ReportGrid';
 import ReportTable from '@/components/reports/ReportTable';
 import ReportNote from '@/components/reports/ReportNote';
+import { labelForTestType } from '@/lib/requirements';
 
 export function ReportDocument({
   reportId,
@@ -27,7 +28,7 @@ export function ReportDocument({
   const evalMode = session?.evaluation_mode === 'in_service' ? 'In-Service Verification' : 'Initial Verification';
   const dateStr = verified?.signed_at || session?.created_at || metadata?.sealedAt;
   const formattedDate = dateStr ? new Date(dateStr).toLocaleDateString() : '—';
-  const signerName = verified?.signed_by || metadata?.signer || 'Pending Officer Approval';
+  const signerName = verified?.signed_by_name || verified?.signed_by || metadata?.signer || 'Awaiting Officer Approval';
 
   return (
     <section className="report-print-surface mt-10">
@@ -97,8 +98,8 @@ export function ReportDocument({
             {observations.length > 0 ? (
               <ReportTable
                 headers={['Test Type', 'Seq', 'Pos', 'Applied Load', 'Indication', 'Corr. Error', 'MPE Limit', 'Verdict']}
-                rows={observations.slice(0, 10).map((obs) => [
-                  obs.test_type,
+                rows={observations.map((obs) => [
+                  labelForTestType(obs.test_type),
                   String(obs.sequence_no ?? 0),
                   obs.position || '—',
                   `${obs.applied_load} ${unit}`,
@@ -118,7 +119,7 @@ export function ReportDocument({
           <ReportSection number="38" title="AUTHENTICATED OFFICER APPROVAL &amp; INTEGRITY">
             <ReportGrid
               rows={[
-                ['Approving officer', signerName, 'Approval status', verified?.signed ? 'Officer Approved' : 'Sealed'],
+                ['Approving officer', signerName, 'Approval status', verified?.signed ? 'Officer Approved' : 'Awaiting Officer Approval'],
                 ['Approval timestamp', verified?.signed_at ? new Date(verified.signed_at).toLocaleString() : 'Pending sign-off', 'Storage integrity', verified?.file_intact ? 'Intact (SHA-256 verified)' : 'Intact'],
                 ['Content digest', verified?.content_digest || '—', 'SHA-256 file hash', verified?.file_sha256 || reportHash || '—'],
               ]}
