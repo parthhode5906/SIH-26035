@@ -1,0 +1,565 @@
+{
+  "meta": {
+    "purpose": "Golden test vectors for the OIML R-76 metrology engine. Shared by the Python (pytest) and TypeScript mirror (Phase 3) test suites so both engines can never drift (memory.md D-12).",
+    "standard": "OIML R 76-1, Section A.4.4.3 (E = I + 0.5e - dL - L; Ec = E - E0) and Section 5.10 / Table 6 semantics (Class III MPE bands).",
+    "convention": "All numbers are strings (never JSON floats). Quantities share the instrument base unit (kg). Band edges are inclusive on the upper bound (lo, hi]. Reported mpe_in_e and load_in_e use fixed 6-decimal notation.",
+    "instrument_ref": "Instruments are declared once under 'instruments'; cases reference them by key.",
+    "verified_through": "Class III column hand-checked against R 76-1 (P1-2 gate record pending sign-off; see memory.md section 7)."
+  },
+  "instruments": {
+    "iii_15kg": {
+      "accuracy_class": "III",
+      "max_capacity": "15",
+      "min_capacity": "0.5",
+      "verification_scale_interval": "0.005",
+      "display_interval": "0.0005",
+      "note": "n = Max/e = 3000 (Class III coarse row: e >= 5 g); Min >= 20d per Section 3.4.3; d <= e."
+    },
+    "iii_15kg_inservice": {
+      "accuracy_class": "III",
+      "max_capacity": "15",
+      "min_capacity": "0.1",
+      "verification_scale_interval": "0.005",
+      "display_interval": "0.001",
+      "base_unit": "kg",
+      "note": "Mode-vector twin of iii_15kg used with mode=in_service (Section 3.5.2)."
+    },
+    "iii_15kg_disc": {
+      "accuracy_class": "III",
+      "max_capacity": "15",
+      "min_capacity": "0.5",
+      "verification_scale_interval": "0.005",
+      "display_interval": "0.001",
+      "note": "Discrimination-capable digital indicator (d = 1 g >= 5 mg); shares e with iii_15kg."
+    }
+  },
+  "evaluation_cases": [
+    {
+      "id": "III-01",
+      "description": "Flagship FAIL demo: +6 g apparent error on a 5 kg load at 1000e where MPE is 1.0e.",
+      "instrument": "iii_15kg",
+      "observation": {
+        "applied_load": "5",
+        "indication": "5.006",
+        "additional_load": "0",
+        "zero_error": "0"
+      },
+      "expected": {
+        "error_prior": "0.0085",
+        "corrected_error": "0.0085",
+        "mpe_limit": "0.005",
+        "mpe_in_e": "1.000000",
+        "load_in_e": "1000.000000",
+        "verdict": "FAIL",
+        "message_contains": [
+          "0.008500",
+          "0.005000",
+          "exceeds"
+        ]
+      }
+    },
+    {
+      "id": "III-02",
+      "description": "Inclusive band edge: error exactly +0.5e at m = 500e must PASS (upper bound inclusive).",
+      "instrument": "iii_15kg",
+      "observation": {
+        "applied_load": "2.5",
+        "indication": "2.5",
+        "additional_load": "0",
+        "zero_error": "0"
+      },
+      "expected": {
+        "error_prior": "0.0025",
+        "corrected_error": "0.0025",
+        "mpe_limit": "0.0025",
+        "mpe_in_e": "0.500000",
+        "load_in_e": "500.000000",
+        "verdict": "PASS",
+        "message_contains": [
+          "within",
+          "0.002500"
+        ]
+      }
+    },
+    {
+      "id": "III-03",
+      "description": "Just past the edge: error +0.7e at m = 500e fails the 0.5e band.",
+      "instrument": "iii_15kg",
+      "observation": {
+        "applied_load": "2.5",
+        "indication": "2.501",
+        "additional_load": "0",
+        "zero_error": "0"
+      },
+      "expected": {
+        "error_prior": "0.0035",
+        "corrected_error": "0.0035",
+        "mpe_limit": "0.0025",
+        "mpe_in_e": "0.500000",
+        "load_in_e": "500.000000",
+        "verdict": "FAIL",
+        "message_contains": [
+          "exceeds",
+          "0.003500"
+        ]
+      }
+    },
+    {
+      "id": "III-04",
+      "description": "Negative corrected error within MPE passes (symmetry of |Ec|).",
+      "instrument": "iii_15kg",
+      "observation": {
+        "applied_load": "7.5",
+        "indication": "7.497",
+        "additional_load": "0",
+        "zero_error": "0"
+      },
+      "expected": {
+        "error_prior": "-0.0005",
+        "corrected_error": "-0.0005",
+        "mpe_limit": "0.005",
+        "mpe_in_e": "1.000000",
+        "load_in_e": "1500.000000",
+        "verdict": "PASS",
+        "message_contains": [
+          "within"
+        ]
+      }
+    },
+    {
+      "id": "III-05",
+      "description": "Band boundary at m = 2000e belongs to the MIDDLE band (1.0e), not the 1.5e band.",
+      "instrument": "iii_15kg",
+      "observation": {
+        "applied_load": "10",
+        "indication": "10.0025",
+        "additional_load": "0",
+        "zero_error": "0"
+      },
+      "expected": {
+        "error_prior": "0.005",
+        "corrected_error": "0.005",
+        "mpe_limit": "0.005",
+        "mpe_in_e": "1.000000",
+        "load_in_e": "2000.000000",
+        "verdict": "PASS",
+        "message_contains": [
+          "within",
+          "0.005000"
+        ]
+      }
+    },
+    {
+      "id": "III-06",
+      "description": "Above 2000e the 1.5e band applies; error of 1.4e passes.",
+      "instrument": "iii_15kg",
+      "observation": {
+        "applied_load": "12.5",
+        "indication": "12.5045",
+        "additional_load": "0",
+        "zero_error": "0"
+      },
+      "expected": {
+        "error_prior": "0.007",
+        "corrected_error": "0.007",
+        "mpe_limit": "0.0075",
+        "mpe_in_e": "1.500000",
+        "load_in_e": "2500.000000",
+        "verdict": "PASS",
+        "message_contains": [
+          "within",
+          "0.007500"
+        ]
+      }
+    },
+    {
+      "id": "III-07",
+      "description": "Load exactly at Max capacity is legal (inclusive) and evaluates in the top band.",
+      "instrument": "iii_15kg",
+      "observation": {
+        "applied_load": "15",
+        "indication": "15",
+        "additional_load": "0",
+        "zero_error": "0"
+      },
+      "expected": {
+        "error_prior": "0.0025",
+        "corrected_error": "0.0025",
+        "mpe_limit": "0.0075",
+        "mpe_in_e": "1.500000",
+        "load_in_e": "3000.000000",
+        "verdict": "PASS",
+        "message_contains": [
+          "within"
+        ]
+      }
+    },
+    {
+      "id": "III-08",
+      "description": "Zero-error correction: E0 = +0.003 turns E = +0.0025 into Ec = -0.0005 (Ec = E - E0).",
+      "instrument": "iii_15kg",
+      "observation": {
+        "applied_load": "5",
+        "indication": "5",
+        "additional_load": "0",
+        "zero_error": "0.003"
+      },
+      "expected": {
+        "error_prior": "0.0025",
+        "corrected_error": "-0.0005",
+        "mpe_limit": "0.005",
+        "mpe_in_e": "1.000000",
+        "load_in_e": "1000.000000",
+        "verdict": "PASS",
+        "message_contains": [
+          "within",
+          "-0.000500"
+        ]
+      }
+    },
+    {
+      "id": "III-09",
+      "description": "Changeover-point method: dL = 0.002 shifts the effective error; result fails by 0.1e.",
+      "instrument": "iii_15kg",
+      "observation": {
+        "applied_load": "5",
+        "indication": "5.005",
+        "additional_load": "0.002",
+        "zero_error": "0"
+      },
+      "expected": {
+        "error_prior": "0.0055",
+        "corrected_error": "0.0055",
+        "mpe_limit": "0.005",
+        "mpe_in_e": "1.000000",
+        "load_in_e": "1000.000000",
+        "verdict": "FAIL",
+        "message_contains": [
+          "exceeds",
+          "0.005500"
+        ]
+      }
+    },
+    {
+      "id": "III-10",
+      "description": "Negative zero error E0 = -0.002 increases the corrected error and flips the verdict to FAIL.",
+      "instrument": "iii_15kg",
+      "observation": {
+        "applied_load": "5",
+        "indication": "5.002",
+        "additional_load": "0",
+        "zero_error": "-0.002"
+      },
+      "expected": {
+        "error_prior": "0.0045",
+        "corrected_error": "0.0065",
+        "mpe_limit": "0.005",
+        "mpe_in_e": "1.000000",
+        "load_in_e": "1000.000000",
+        "verdict": "FAIL",
+        "message_contains": [
+          "exceeds",
+          "0.006500"
+        ]
+      }
+    },
+    {
+      "id": "EVAL-MODE-01",
+      "description": "Class III in-service re-verification: MPE is 2x Table 6 (Section 3.5.2); Ec = 1.8e FAILS initial (limit 1.0e) but PASSES in-service (limit 2.0e)",
+      "instrument": "iii_15kg_inservice",
+      "observation": {
+        "applied_load": "7.5",
+        "indication": "7.5065",
+        "additional_load": "0",
+        "zero_error": "0"
+      },
+      "mode": "in_service",
+      "expected": {
+        "error_prior": "0.009",
+        "corrected_error": "0.009",
+        "mpe_limit": "0.01",
+        "mpe_in_e": "2.000000",
+        "load_in_e": "1500.000000",
+        "verdict": "PASS",
+        "message_contains": [
+          "within",
+          "0.009000",
+          "2.000000e"
+        ]
+      }
+    },
+    {
+      "id": "DISC-01",
+      "description": "Discrimination PASS: I2-I1 = 2 g >= d = 1 g after the 1.4 d extra load (A.4.8.2).",
+      "instrument": "iii_15kg_disc",
+      "observation": {
+        "applied_load": "5",
+        "indication": "5.000",
+        "additional_load": "0.001",
+        "zero_error": "0",
+        "second_indication": "5.002"
+      },
+      "expected": {
+        "error_prior": "0",
+        "corrected_error": "0.002",
+        "mpe_limit": "0.001",
+        "mpe_in_e": "0.200000",
+        "load_in_e": "1000.000000",
+        "verdict": "PASS",
+        "message_contains": [
+          "Discrimination",
+          ">="
+        ]
+      },
+      "test_type": "discrimination"
+    },
+    {
+      "id": "DISC-02",
+      "description": "Discrimination FAIL: indication shifts by only 0.5 d — not unambiguous.",
+      "instrument": "iii_15kg_disc",
+      "observation": {
+        "applied_load": "5",
+        "indication": "5.000",
+        "additional_load": "0.0005",
+        "zero_error": "0",
+        "second_indication": "5.0005"
+      },
+      "expected": {
+        "error_prior": "0",
+        "corrected_error": "0.0005",
+        "mpe_limit": "0.001",
+        "mpe_in_e": "0.200000",
+        "load_in_e": "1000.000000",
+        "verdict": "FAIL",
+        "message_contains": [
+          "Discrimination",
+          "<"
+        ]
+      },
+      "test_type": "discrimination"
+    },
+    {
+      "id": "TNL-01",
+      "description": "Temperature on no-load: +5.5 g zero drift exceeds the fixed 1e limit (3.9.2.3) though it would pass the 1.5e band.",
+      "instrument": "iii_15kg",
+      "observation": {
+        "applied_load": "0",
+        "indication": "0.004",
+        "additional_load": "0.001",
+        "zero_error": "0"
+      },
+      "expected": {
+        "error_prior": "0.0055",
+        "corrected_error": "0.0055",
+        "mpe_limit": "0.005",
+        "mpe_in_e": "1.000000",
+        "load_in_e": "0.000000",
+        "verdict": "FAIL",
+        "message_contains": [
+          "Zero-point",
+          "1e"
+        ]
+      },
+      "test_type": "temperature_no_load"
+    },
+    {
+      "id": "TNL-02",
+      "description": "Temperature on no-load PASS: +0.75e zero drift within the fixed 1e limit (3.9.2.3).",
+      "instrument": "iii_15kg",
+      "observation": {
+        "applied_load": "0",
+        "indication": "0.005",
+        "additional_load": "0.00375",
+        "zero_error": "0"
+      },
+      "expected": {
+        "error_prior": "0.00375",
+        "corrected_error": "0.00375",
+        "mpe_limit": "0.005",
+        "mpe_in_e": "1.000000",
+        "load_in_e": "0.000000",
+        "verdict": "PASS",
+        "message_contains": [
+          "Zero-point",
+          "<="
+        ]
+      },
+      "test_type": "temperature_no_load"
+    }
+  ],
+  "validation_cases": [
+    {
+      "id": "VAL-01",
+      "description": "Valid Class III instrument passes validate_instrument_spec.",
+      "instrument": "iii_15kg",
+      "expect_error": null
+    },
+    {
+      "id": "VAL-02",
+      "description": "n below the coarse-e row floor: e = 5 g -> n >= 500 required; n = 40.",
+      "instrument": {
+        "accuracy_class": "III",
+        "max_capacity": "0.2",
+        "min_capacity": "0.05",
+        "verification_scale_interval": "0.005",
+        "display_interval": "0.001"
+      },
+      "expect_error_contains": [
+        "n = Max/e >= 500"
+      ]
+    },
+    {
+      "id": "VAL-03",
+      "description": "Max not an integer multiple of e: n = 200.4.",
+      "instrument": {
+        "accuracy_class": "III",
+        "max_capacity": "1.002",
+        "min_capacity": "0.05",
+        "verification_scale_interval": "0.005",
+        "display_interval": "0.001"
+      },
+      "expect_error_contains": [
+        "integer multiple"
+      ]
+    },
+    {
+      "id": "VAL-04",
+      "description": "Min below 20d for Class III (Section 3.4.3: the Table 3 Min column is in d).",
+      "instrument": {
+        "accuracy_class": "III",
+        "max_capacity": "1",
+        "min_capacity": "0.01",
+        "verification_scale_interval": "0.002",
+        "display_interval": "0.002"
+      },
+      "expect_error_contains": [
+        "min_capacity"
+      ]
+    },
+    {
+      "id": "VAL-05",
+      "description": "Display interval exceeds verification interval (d > e).",
+      "instrument": {
+        "accuracy_class": "III",
+        "max_capacity": "15",
+        "min_capacity": "0.5",
+        "verification_scale_interval": "0.005",
+        "display_interval": "0.01"
+      },
+      "expect_error_contains": [
+        "must not exceed"
+      ]
+    },
+    {
+      "id": "VAL-06",
+      "description": "n above the class ceiling: n = 12000 > 10000 for Class III.",
+      "instrument": {
+        "accuracy_class": "III",
+        "max_capacity": "60",
+        "min_capacity": "0.5",
+        "verification_scale_interval": "0.005",
+        "display_interval": "0.0005"
+      },
+      "expect_error_contains": [
+        "n = Max/e <= 10000"
+      ]
+    },
+    {
+      "id": "VAL-07",
+      "description": "Class III coarse-e row floor: e = 5 g requires n >= 500; n = 499.",
+      "instrument": {
+        "accuracy_class": "III",
+        "max_capacity": "2.495",
+        "min_capacity": "0.5",
+        "verification_scale_interval": "0.005",
+        "display_interval": "0.001"
+      },
+      "expect_error_contains": [
+        "n = Max/e >= 500"
+      ]
+    },
+    {
+      "id": "VAL-08",
+      "description": "Class III e-gap: 2 g < e < 5 g is not permitted by Table 3.",
+      "instrument": {
+        "accuracy_class": "III",
+        "max_capacity": "3",
+        "min_capacity": "0.5",
+        "verification_scale_interval": "0.003",
+        "display_interval": "0.001"
+      },
+      "expect_error_contains": [
+        "does not permit"
+      ]
+    },
+    {
+      "id": "VAL-09",
+      "description": "Class IIII n floor: e = 5 kg, n = 60 < 100.",
+      "instrument": {
+        "accuracy_class": "IIII",
+        "max_capacity": "300",
+        "min_capacity": "50",
+        "verification_scale_interval": "5",
+        "display_interval": "5"
+      },
+      "expect_error_contains": [
+        "n = Max/e >= 100"
+      ]
+    },
+    {
+      "id": "VAL-10",
+      "description": "Valid Class IIII weighbridge row: e = 5 kg, n = 120, Min = 10d exactly.",
+      "instrument": {
+        "accuracy_class": "IIII",
+        "max_capacity": "600",
+        "min_capacity": "50",
+        "verification_scale_interval": "5",
+        "display_interval": "5"
+      },
+      "expect_error": null
+    },
+    {
+      "id": "VAL-11",
+      "description": "Class II fine row in grams (unit-conversion path): e = 0.1 g, n = 100000 at the ceiling, Min >= 50d.",
+      "instrument": {
+        "accuracy_class": "II",
+        "base_unit": "g",
+        "max_capacity": "10000",
+        "min_capacity": "1",
+        "verification_scale_interval": "0.1",
+        "display_interval": "0.01"
+      },
+      "expect_error": null
+    },
+    {
+      "id": "VAL-12",
+      "description": "Class II e-gap: 0.05 g < e < 0.1 g is not permitted.",
+      "instrument": {
+        "accuracy_class": "II",
+        "base_unit": "g",
+        "max_capacity": "7000",
+        "min_capacity": "1",
+        "verification_scale_interval": "0.07",
+        "display_interval": "0.01"
+      },
+      "expect_error_contains": [
+        "does not permit"
+      ]
+    },
+    {
+      "id": "VAL-13",
+      "description": "Class I Min in d (Section 3.4.3): Min 0.005 g < 100d = 0.01 g.",
+      "instrument": {
+        "accuracy_class": "I",
+        "base_unit": "g",
+        "max_capacity": "60",
+        "min_capacity": "0.005",
+        "verification_scale_interval": "0.001",
+        "display_interval": "0.0001"
+      },
+      "expect_error_contains": [
+        "min_capacity"
+      ]
+    }
+  ]
+}

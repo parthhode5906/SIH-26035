@@ -1,0 +1,67 @@
+# P7-2 — deployment composition for the OIML R-76 Compliance Engine.
+#
+# Services: postgres (durable, healthchecked), backend (FastAPI/uvicorn),
+# frontend (nginx serving the built PWA and proxying /api to the backend).
+#
+# Usage:  cd deploy && docker compose up --build
+# First run creates the volumes; the backend runs `alembic upgrade head`
+# on every boot — migrations are the production schema path (never
+# create_all outside dev).
+#
+# SECURITY: set JWT_SECRET_KEY and POSTGRES_PASSWORD via a .env file next to
+# this compose file (never commit it). See deploy/.env.example.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: oiml
+      POSTGRES_USER: oiml
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oiml -d oiml"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../deploy/backend.Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://oiml:${POSTGRES_PASSWORD}@db:5432/oiml
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY in deploy/.env}
+      ENVIRONMENT: production
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:8080}
+      REPORT_VERIFY_BASE_URL: ${REPORT_VERIFY_BASE_URL:-http://localhost:8080}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - reports:/app/reports
+      - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/frontend.Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  reports:
+  uploads:
